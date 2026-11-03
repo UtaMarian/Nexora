@@ -70,6 +70,15 @@ nexora:
       create-bucket: ${NEXORA_S3_CREATE_BUCKET:true}
   sites:
     self-service: ${NEXORA_SELF_SERVICE_SITES:true}
+  office:
+    # Browser editing and co-authoring through Collabora Online (WOPI).
+    enabled: ${NEXORA_OFFICE_ENABLED:true}
+    # Where NEXORA reads the editor's capabilities.
+    discovery-url: ${NEXORA_OFFICE_DISCOVERY_URL:http://localhost:9980/hosting/discovery}
+    # How the editor reaches NEXORA's /wopi endpoints (must be in Collabora's aliasgroup allow-list).
+    wopi-host-url: ${NEXORA_WOPI_HOST_URL:http://host.docker.internal:8080}
+    token-secret: ${NEXORA_WOPI_TOKEN_SECRET:}
+    token-ttl: ${NEXORA_WOPI_TOKEN_TTL:10h}
   bootstrap:
     admin-login: ${NEXORA_BOOTSTRAP_ADMIN_LOGIN:admin}
     admin-password: ${NEXORA_BOOTSTRAP_ADMIN_PASSWORD:}

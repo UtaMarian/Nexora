@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Text, makeStyles, tokens } from "@fluentui/react-components";
-import { ArrowDownloadRegular, OpenRegular } from "@fluentui/react-icons";
+import { ArrowDownloadRegular, DocumentEditRegular, OpenRegular } from "@fluentui/react-icons";
+import { officeRoute, useOffice } from "../components/office";
 import { api, contentUrl, routeFor } from "../api/client";
 import type { Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
@@ -26,6 +27,7 @@ export function FileView({ file, breadcrumbs }: { file: NodeDto; breadcrumbs: Cr
     queryFn: () => api<LibrarySettings>(`/api/v1/nodes/${library.id}/settings`),
   });
   const parent = breadcrumbs[breadcrumbs.length - 2];
+  const office = useOffice();
 
   return (
     <>
@@ -67,8 +69,19 @@ export function FileView({ file, breadcrumbs }: { file: NodeDto; breadcrumbs: Cr
           ))}
         </div>
         <div className={s.row}>
-          <Button appearance="primary" icon={<OpenRegular />} as="a" href={contentUrl(file.id)} target="_blank">
-            Open
+          {office.canOpen(file.name) && (
+            <Button appearance="primary" icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(file.id))}>
+              Open in browser
+            </Button>
+          )}
+          <Button
+            appearance={office.canOpen(file.name) ? "secondary" : "primary"}
+            icon={<OpenRegular />}
+            as="a"
+            href={contentUrl(file.id)}
+            target="_blank"
+          >
+            Open file
           </Button>
           <Button icon={<ArrowDownloadRegular />} as="a" href={contentUrl(file.id, { download: true })}>
             Download

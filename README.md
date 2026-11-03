@@ -5,11 +5,12 @@ for organizations that must stay on-premises. See the
 [development plan](SharePoint%20Server%20Replacement%20–%20Development%20Plan.md) for the product strategy.
 
 This repository holds the **MVP core**: sites, document libraries, versioning, check-out/in, metadata
-columns, a SharePoint-compatible permission model, a recycle bin, an audit log, a REST API and a web app.
+columns, a SharePoint-compatible permission model, a recycle bin, an audit log, a REST API, a web app, and
+**browser Office editing with real-time co-authoring** (Collabora Online over WOPI).
 
 ## Run it
 
-### With Docker (PostgreSQL + MinIO)
+### With Docker (PostgreSQL + S3 + Office editor)
 
 ```sh
 cd deploy
@@ -19,6 +20,10 @@ docker compose up -d --build
 
 Open http://localhost:8088 and sign in as `admin` with `NEXORA_BOOTSTRAP_ADMIN_PASSWORD`.
 With `NEXORA_DEMO_DATA=true` you also get `alice` / `alice-demo` (site member) and `bob` / `bob-demo` (visitor).
+
+The stack runs PostgreSQL, SeaweedFS (S3), Collabora Online (port 9980), the API and the web app.
+To co-author, open the same Word/Excel/PowerPoint file as two users (for example alice in one browser and
+admin in a private window): both join the same live session and see each other's cursors.
 
 ### Without Docker (development)
 
@@ -36,6 +41,8 @@ pnpm dev
 ```
 
 The local profile signs in `admin` / `admin` and creates the demo users and the `/sites/intranet` site.
+For Office editing in this mode, also run the `collabora` service from `deploy/` (`docker compose up -d collabora`);
+it reaches the host backend through `host.docker.internal:8080`.
 
 ### Tests
 
@@ -60,13 +67,14 @@ cd frontend && pnpm typecheck
 | SharePoint-style URLs (`/sites/hr/Shared Documents/a.docx`) in the API (`/api/v1/resolve`) and the browser | ✅ |
 | Storage on S3-compatible object stores or a filesystem/NFS, content-addressed and de-duplicated | ✅ |
 | Browser sessions with CSRF protection; HTTP Basic for scripts | ✅ |
+| Browser editing of Word, Excel, PowerPoint and OpenDocument files with real-time co-authoring (WOPI + Collabora) | ✅ |
 | OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` (API port) | ✅ |
 
 ## Not built yet (next slices, in plan order)
 
 1. **Identity gateway**: Keycloak with OIDC/SAML, AD/LDAP sync, Kerberos SSO.
 2. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
-3. **Office integration**: WOPI host for Collabora/OnlyOffice, plus WebDAV with Office lock semantics and `ms-word:` URIs.
+3. **Desktop Office**: WebDAV with Office lock semantics and `ms-word:` URIs (browser editing is done), WOPI proof-key validation, "New document" from templates.
 4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
 5. Content types and a managed-metadata term store, then lists, pages, workflows (v1).
 
@@ -79,6 +87,7 @@ backend/    Spring Boot modular monolith (Java 21)
   acl/        permission levels and the single permission-check service
   storage/    BlobStore: filesystem and S3
   audit/      audit events
+  office/     WOPI host for the browser Office editor
   api/        REST controllers and DTOs (/api/v1)
 frontend/   React + TypeScript + Fluent UI web app
 deploy/     Docker Compose

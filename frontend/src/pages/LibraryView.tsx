@@ -33,6 +33,7 @@ import { Crumbs } from "../components/Crumbs";
 import { FileIcon } from "../components/FileIcon";
 import { ItemActions } from "../components/ItemActions";
 import { can, useMe } from "../components/me";
+import { officeRoute, useOffice } from "../components/office";
 import { Empty, ErrorBar, Loading } from "../components/States";
 import { formatRelative, formatSize } from "../components/format";
 import { PromptDialog } from "../dialogs/PromptDialog";
@@ -89,6 +90,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
   const [progress, setProgress] = useState<{ name: string; fraction: number } | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const office = useOffice();
 
   const canAdd = can(container, "ADD_ITEMS");
   const minor = settings.data?.minorVersionsEnabled ?? false;
@@ -227,7 +229,11 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
                   <TableRow key={n.id}>
                     <TableCell>
                       <TableCellLayout media={<FileIcon kind={n.kind} name={n.name} />}>
-                        {n.kind === "FILE" ? (
+                        {n.kind === "FILE" && office.canOpen(n.name) ? (
+                          <Link className={s.nameLink} to={officeRoute(n.id)}>
+                            {n.name}
+                          </Link>
+                        ) : n.kind === "FILE" ? (
                           <a className={s.nameLink} href={contentUrl(n.id)} target="_blank" rel="noopener">
                             {n.name}
                           </a>

@@ -54,6 +54,38 @@ endpoints all call it.
 - Planned: Keycloak (OIDC/SAML/Kerberos) replaces local passwords. `principal.external_id` holds the
   AD SID / subject for migration mapping.
 
+## Office editing and co-authoring (WOPI)
+
+NEXORA is a WOPI *host*; Collabora Online is the WOPI *client* (the editor).
+
+```
+browser ──POST access_token──▶ Collabora (iframe, :9980) ──WOPI──▶ backend /wopi/files/{id}
+   ▲                                   │                                  │
+   └──────── /api/v1/nodes/{id}/office-session ◀──────────────────────────┘
+```
+
+1. The web app asks `POST /api/v1/nodes/{id}/office-session`. NEXORA reads Collabora's discovery XML for
+   the editor URL, and signs an access token (HMAC, user + file + expiry + browser origin).
+2. The web app posts the token into an iframe at the editor URL, with `WOPISrc` pointing at
+   `/wopi/files/{id}`.
+3. Collabora calls CheckFileInfo, GetFile and PutFile server-to-server. **Every call re-checks
+   permissions**, so revoking access stops an open editor at its next save.
+4. Everyone who opens the same file gets the same `WOPISrc`, so Collabora puts them in one live
+   session. That is the co-authoring.
+
+Rules:
+
+- **Saves are versions.** PutFile goes through `DocumentService.saveContent`, the same path as an upload,
+  so version numbering, check-out drafts, version limits and the audit log all apply.
+- **Check-out wins.** If someone else has the file checked out, or the library requires check-out and the
+  user has not checked it out, the editor opens read-only.
+- **Conflicts.** If the file changed outside the session (for example an upload), PutFile answers `409`
+  with `COOLStatusCode 1010` and Collabora asks the user what to do.
+- **Not exposed.** `/wopi/` is reachable only on the internal network (the nginx web container returns
+  404). The token secret must be identical on all backend nodes and stable across restarts.
+- WOPI locks are not used (`SupportsLocks=false`), because Collabora coordinates its own sessions. Locks
+  become necessary for desktop Office over WebDAV.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses
@@ -62,8 +94,11 @@ in the service layer only.
 
 ## Known gaps
 
-- The PostgreSQL + MinIO path is configured but was not exercised in this first slice (tests run on H2 and
-  the filesystem store). Run `docker compose up` once and smoke-test before relying on it.
+- The Compose stack uses SeaweedFS for S3, because MinIO stopped publishing container images. Any
+  S3-compatible store works. The PostgreSQL + S3 path has been smoke-tested, but the automated tests
+  run on H2 and the filesystem store.
+- WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
+  plus signed tokens.
 - Search matches names and titles only, until the OpenSearch module lands.
 - Draft visibility for minor versions (SharePoint's "who can see drafts") is not implemented: readers see
   the latest version, published or not.

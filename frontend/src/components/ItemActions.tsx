@@ -19,6 +19,7 @@ import {
   CheckmarkCircleRegular,
   DeleteRegular,
   DismissCircleRegular,
+  DocumentEditRegular,
   EditRegular,
   HistoryRegular,
   InfoRegular,
@@ -31,6 +32,7 @@ import {
 import { api, ApiError, contentUrl, routeFor } from "../api/client";
 import type { NodeDto } from "../api/types";
 import { can, useMe } from "./me";
+import { officeRoute, useOffice } from "./office";
 import { PromptDialog } from "../dialogs/PromptDialog";
 import { PropertiesDialog } from "../dialogs/PropertiesDialog";
 import { VersionHistoryDialog } from "../dialogs/VersionHistoryDialog";
@@ -55,6 +57,7 @@ export function ItemActions(props: {
   const { dispatchToast } = useToastController(TOASTER_ID);
   const [dialog, setDialog] = useState<DialogKind>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const office = useOffice();
 
   const isFile = node.kind === "FILE";
   const mine = node.checkedOutBy?.id === me.id;
@@ -108,8 +111,13 @@ export function ItemActions(props: {
           <MenuList>
             {isFile ? (
               <>
+                {office.canOpen(node.name) && (
+                  <MenuItem icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(node.id))}>
+                    {office.canEdit(node.name) && canEdit ? "Open in browser" : "View in browser"}
+                  </MenuItem>
+                )}
                 <MenuItem icon={<OpenRegular />} onClick={() => window.open(contentUrl(node.id), "_blank", "noopener")}>
-                  Open
+                  {office.canOpen(node.name) ? "Open file" : "Open"}
                 </MenuItem>
                 <MenuItem
                   icon={<ArrowDownloadRegular />}

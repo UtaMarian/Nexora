@@ -8,6 +8,11 @@ nexora:
     type: filesystem
     filesystem:
       root: ${java.io.tmpdir}/nexora-test-blobs
+  office:
+    enabled: true
+    discovery-url: http://127.0.0.1:9/hosting/discovery   # nothing listens here: editor "unavailable"
+    wopi-host-url: http://nexora.test
+    token-secret: test-secret
   bootstrap:
     admin-login: admin
     admin-password: admin-test-pw

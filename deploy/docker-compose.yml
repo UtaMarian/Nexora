@@ -1,9 +1,11 @@
-# NEXORA single-host install: PostgreSQL, MinIO (S3), API server and web app.
+# NEXORA single-host install: PostgreSQL, S3 object storage (SeaweedFS), Office editor (Collabora Online),
+# API server and web app.
 #
 #   cp .env.example .env    # set real passwords
 #   docker compose up -d --build
 #   open http://localhost:8088
 #
+# Production installs can point NEXORA at an existing S3 store (Ceph, NetApp, Dell ECS, AWS) instead of SeaweedFS.
 name: nexora
 
 services:
@@ -22,38 +24,67 @@ services:
       timeout: 3s
       retries: 20
 
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+  s3:
+    image: chrislusf/seaweedfs:4.45
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    entrypoint: ["/bin/sh", "/start.sh"]
     environment:
-      MINIO_ROOT_USER: ${NEXORA_S3_ACCESS_KEY:?set NEXORA_S3_ACCESS_KEY in .env}
-      MINIO_ROOT_PASSWORD: ${NEXORA_S3_SECRET_KEY:?set NEXORA_S3_SECRET_KEY in .env}
+      S3_ACCESS_KEY: ${NEXORA_S3_ACCESS_KEY:?set NEXORA_S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${NEXORA_S3_SECRET_KEY:?set NEXORA_S3_SECRET_KEY in .env}
     volumes:
+      - ./seaweedfs/start.sh:/start.sh:ro
       - blob-data:/data
-    ports:
-      - "127.0.0.1:9001:9001"   # MinIO console, local access only
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
       interval: 5s
       timeout: 3s
-      retries: 20
+      retries: 30
+
+  # Collabora Online (CODE): browser editing and real-time co-authoring of Word, Excel and PowerPoint files.
+  collabora:
+    image: collabora/code:26.04.5.1.1
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      # WOPI hosts allowed to serve documents: the backend container, and a backend run outside Docker (dev).
+      aliasgroup1: http://backend:8080
+      aliasgroup2: http://host.docker.internal:8080
+      # Host and port browsers use to reach the editor.
+      server_name: ${NEXORA_OFFICE_PUBLIC_HOST:-localhost:9980}
+      username: admin
+      password: ${NEXORA_OFFICE_ADMIN_PASSWORD:?set NEXORA_OFFICE_ADMIN_PASSWORD in .env}
+      dictionaries: en_US en_GB de_DE fr_FR es_ES it_IT ro_RO
+      extra_params: >-
+        --o:ssl.enable=false
+        --o:ssl.termination=false
+        --o:net.frame_ancestors=${NEXORA_OFFICE_FRAME_ANCESTORS:-localhost:*}
+        --o:welcome.enable=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${NEXORA_OFFICE_PORT:-9980}:9980"
 
   backend:
     build: ../backend
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
-      minio: { condition: service_healthy }
+      s3: { condition: service_healthy }
+      collabora: { condition: service_started }
     environment:
       NEXORA_DB_URL: jdbc:postgresql://db:5432/nexora
       NEXORA_DB_USER: nexora
       NEXORA_DB_PASSWORD: ${NEXORA_DB_PASSWORD}
       NEXORA_STORAGE_TYPE: s3
-      NEXORA_S3_ENDPOINT: http://minio:9000
+      NEXORA_S3_ENDPOINT: http://s3:8333
       NEXORA_S3_BUCKET: nexora
       NEXORA_S3_ACCESS_KEY: ${NEXORA_S3_ACCESS_KEY}
       NEXORA_S3_SECRET_KEY: ${NEXORA_S3_SECRET_KEY}
+      NEXORA_OFFICE_ENABLED: "true"
+      NEXORA_OFFICE_DISCOVERY_URL: http://collabora:9980/hosting/discovery
+      NEXORA_WOPI_HOST_URL: http://backend:8080
+      NEXORA_WOPI_TOKEN_SECRET: ${NEXORA_WOPI_TOKEN_SECRET:?set NEXORA_WOPI_TOKEN_SECRET in .env}
       NEXORA_BOOTSTRAP_ADMIN_PASSWORD: ${NEXORA_BOOTSTRAP_ADMIN_PASSWORD:?set NEXORA_BOOTSTRAP_ADMIN_PASSWORD in .env}
       NEXORA_DEMO_DATA: ${NEXORA_DEMO_DATA:-false}
       NEXORA_SECURE_COOKIES: ${NEXORA_SECURE_COOKIES:-false}

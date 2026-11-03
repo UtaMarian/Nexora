@@ -39,13 +39,16 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain api(HttpSecurity http) throws Exception {
+        // WOPI calls come server-to-server from the Office editor and carry a signed access_token, not a cookie.
         RequestMatcher csrfRequired = request ->
                 !SAFE_METHODS.contains(request.getMethod())
-                        && request.getHeader("Authorization") == null;
+                        && request.getHeader("Authorization") == null
+                        && !request.getRequestURI().startsWith("/wopi/");
 
         http
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf").permitAll()
+                .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())

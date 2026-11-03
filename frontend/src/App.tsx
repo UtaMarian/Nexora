@@ -12,6 +12,7 @@ import { ResolvePage } from "./pages/ResolvePage";
 import { RecycleBinPage } from "./pages/RecycleBinPage";
 import { AuditPage } from "./pages/AuditPage";
 import { SearchPage } from "./pages/SearchPage";
+import { OfficePage } from "./pages/OfficePage";
 import { NotFound } from "./components/States";
 
 export function App() {
@@ -48,6 +49,7 @@ export function App() {
           <Route path="/recycle-bin" element={<RecycleBinPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/office/:id" element={<OfficePage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppShell>
