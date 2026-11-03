@@ -30,12 +30,11 @@ public class DavConfig {
     }
 
     /**
-     * WebDAV sign-in:
-     * <ul>
-     *   <li>desktop Office: MS-OFBA (403 + sign-in page in Office's own browser window, then the NEXORA session
-     *       cookie), because Microsoft 365 Apps block Basic-authentication prompts;</li>
-     *   <li>Windows Explorer, macOS, Linux, scripts: HTTP Basic (local or directory password) or a NEXORA bearer token.</li>
-     * </ul>
+     * WebDAV sign-in: HTTP Basic (local or directory password, shown by Windows as its credential prompt) or a
+     * NEXORA bearer token. With {@code nexora.dav.office-sign-in=forms}, desktop Office gets MS-OFBA instead (403 +
+     * a sign-in page in Office's own browser window, then the NEXORA session cookie). Microsoft 365 Apps block
+     * Basic prompts unless the host is allowed by the "Allow specified hosts to show Basic Authentication prompts
+     * to Office apps" policy, so pick {@code forms} when that policy cannot be deployed.
      * An existing session is used but never created here. CSRF protection is not needed: WebDAV's write methods
      * cannot be sent cross-site without a CORS preflight (none is allowed), and the session cookie is SameSite=Lax.
      * OPTIONS is open so clients can discover WebDAV support before they authenticate.
@@ -44,10 +43,14 @@ public class DavConfig {
     @Order(1)
     SecurityFilterChain davSecurity(HttpSecurity http,
             org.springframework.beans.factory.ObjectProvider<io.nexora.identity.sso.SsoConfig.SsoSecurity> sso,
-            io.nexora.identity.SecurityConfig.AuthProviders authProviders) throws Exception {
+            io.nexora.identity.SecurityConfig.AuthProviders authProviders,
+            @org.springframework.beans.factory.annotation.Value("${nexora.dav.office-sign-in:basic}") String officeSignIn)
+            throws Exception {
         BasicAuthenticationEntryPoint challenge = new BasicAuthenticationEntryPoint();
         challenge.setRealmName("NEXORA");
         challenge.afterPropertiesSet();
+        org.springframework.security.web.AuthenticationEntryPoint entry =
+                "forms".equalsIgnoreCase(officeSignIn.trim()) ? new OfbaEntryPoint(challenge) : challenge;
         // Path-pattern matchers: the MVC-based default does not see requests served by the WebDAV servlet.
         var paths = PathPatternRequestMatcher.withDefaults();
         authProviders.providers().forEach(http::authenticationProvider);
@@ -56,7 +59,7 @@ public class DavConfig {
                         .requestMatchers(paths.matcher(HttpMethod.OPTIONS, "/dav/**")).permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(b -> b.authenticationEntryPoint(challenge))
-                .exceptionHandling(e -> e.authenticationEntryPoint(new OfbaEntryPoint(challenge)))
+                .exceptionHandling(e -> e.authenticationEntryPoint(entry))
                 .csrf(c -> c.disable())
                 .securityContext(c -> c.securityContextRepository(
                         new org.springframework.security.web.context.HttpSessionSecurityContextRepository()))
@@ -66,7 +69,7 @@ public class DavConfig {
                 // ignore bearer tokens from other issuers (desktop Office sends its Microsoft 365 token)
                 http.oauth2ResourceServer(o -> o
                         .bearerTokenResolver(s.bearerResolver())
-                        .authenticationEntryPoint(new OfbaEntryPoint(challenge))
+                        .authenticationEntryPoint(entry)
                         .jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
             } catch (Exception e) {
                 throw new IllegalStateException(e);

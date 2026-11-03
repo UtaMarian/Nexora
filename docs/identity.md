@@ -103,6 +103,27 @@ AD FS users are linked by UPN. If the same people also come from the LDAP connec
 *first broker login* flow asks them once to link the two accounts. To link automatically, configure that flow
 in Keycloak.
 
+## Desktop Office sign-in (Open in Word, mapped drives)
+
+`NEXORA_OFFICE_SIGN_IN` in `.env` picks how Word, Excel and PowerPoint sign in over WebDAV:
+
+| Value | What the user sees | Needs |
+| --- | --- | --- |
+| `basic` (default) | the Windows credential prompt; user name and password (local or directory account) | the NEXORA host in Office's Basic-prompt allow list (below) |
+| `forms` | a NEXORA sign-in window inside Office (MS-OFBA) with the single sign-on buttons | nothing on the PCs |
+
+Microsoft 365 Apps block Basic prompts by default ("Microsoft Office has blocked access … sign-in method that
+may be unsecure"). For `basic`, allow the NEXORA host with the Group Policy *User Configuration → Administrative
+Templates → Microsoft Office 2016 → Security Settings → Allow specified hosts to show Basic Authentication prompts
+to Office apps*, or on one PC (elevated PowerShell, semicolon-separated host names):
+
+```powershell
+reg add HKCU\Software\Policies\Microsoft\Office.0\Common\Identity /v basichostallowlist /t REG_EXPAND_SZ /d "localhost" /f
+```
+
+Then close every Office app and open the document again. Windows Explorer's mapped drives always use the
+Windows prompt.
+
 ## Troubleshooting
 
 - **Sign-in comes back with an error:** run `NEXORA_SECURITY_LOG=TRACE docker compose up -d backend` and check

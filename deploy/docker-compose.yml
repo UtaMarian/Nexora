@@ -190,6 +190,8 @@ services:
       NEXORA_BOOTSTRAP_ADMIN_PASSWORD: ${NEXORA_BOOTSTRAP_ADMIN_PASSWORD:?set NEXORA_BOOTSTRAP_ADMIN_PASSWORD in .env}
       NEXORA_DEMO_DATA: ${NEXORA_DEMO_DATA:-false}
       NEXORA_SECURE_COOKIES: "true"
+      # desktop Office sign-in: basic (Windows prompt) or forms (MS-OFBA window with single sign-on)
+      NEXORA_OFFICE_SIGN_IN: ${NEXORA_OFFICE_SIGN_IN:-basic}
       # troubleshooting sign-in: NEXORA_SECURITY_LOG=DEBUG
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${NEXORA_SECURITY_LOG:-INFO}
       # single sign-on and directory sync through Keycloak
