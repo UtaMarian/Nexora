@@ -30,9 +30,15 @@ public class DavConfig {
     }
 
     /**
-     * WebDAV clients (Office, Windows WebClient, macOS Finder, davfs2) authenticate on every request and keep no
-     * cookies: HTTP Basic with a proper challenge, no session, no CSRF. OPTIONS is open so clients can discover
-     * WebDAV support before they authenticate. Kerberos/NTLM SSO comes with the identity gateway.
+     * WebDAV sign-in:
+     * <ul>
+     *   <li>desktop Office: MS-OFBA (403 + sign-in page in Office's own browser window, then the NEXORA session
+     *       cookie), because Microsoft 365 Apps block Basic-authentication prompts;</li>
+     *   <li>Windows Explorer, macOS, Linux, scripts: HTTP Basic (local or directory password) or a NEXORA bearer token.</li>
+     * </ul>
+     * An existing session is used but never created here. CSRF protection is not needed: WebDAV's write methods
+     * cannot be sent cross-site without a CORS preflight (none is allowed), and the session cookie is SameSite=Lax.
+     * OPTIONS is open so clients can discover WebDAV support before they authenticate.
      */
     @Bean
     @Order(1)
@@ -50,15 +56,17 @@ public class DavConfig {
                         .requestMatchers(paths.matcher(HttpMethod.OPTIONS, "/dav/**")).permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(b -> b.authenticationEntryPoint(challenge))
-                .exceptionHandling(e -> e.authenticationEntryPoint(challenge))
+                .exceptionHandling(e -> e.authenticationEntryPoint(new OfbaEntryPoint(challenge)))
                 .csrf(c -> c.disable())
-                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                .securityContext(c -> c.securityContextRepository(
+                        new org.springframework.security.web.context.HttpSessionSecurityContextRepository()))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.NEVER));
         sso.ifAvailable(s -> {
             try {
                 // ignore bearer tokens from other issuers (desktop Office sends its Microsoft 365 token)
                 http.oauth2ResourceServer(o -> o
                         .bearerTokenResolver(s.bearerResolver())
-                        .authenticationEntryPoint(challenge)
+                        .authenticationEntryPoint(new OfbaEntryPoint(challenge))
                         .jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
             } catch (Exception e) {
                 throw new IllegalStateException(e);

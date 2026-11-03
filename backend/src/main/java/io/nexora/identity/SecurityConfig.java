@@ -54,7 +54,8 @@ public class SecurityConfig {
         http
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf", "/api/v1/auth/providers").permitAll()
+                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf", "/api/v1/auth/providers",
+                        "/api/v1/auth/ofba/**").permitAll()
                 .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
@@ -79,7 +80,7 @@ public class SecurityConfig {
                     .authorizationEndpoint(a -> a.authorizationRequestResolver(s.requestResolver()))
                     .userInfoEndpoint(u -> u.oidcUserService(s.userService()))
                     .securityContextRepository(securityContextRepository())
-                    .defaultSuccessUrl("/", true)
+                    .successHandler(new io.nexora.identity.sso.OfbaSuccess())
                     .failureHandler((req, res, ex) -> {
                         String code = ex instanceof org.springframework.security.oauth2.core.OAuth2AuthenticationException o2
                                 ? o2.getError().getErrorCode() : "login_failed";

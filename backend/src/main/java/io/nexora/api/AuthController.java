@@ -91,6 +91,33 @@ public class AuthController {
         return new Providers(idp.localLogin(), sso);
     }
 
+    /**
+     * MS-OFBA sign-in page for desktop Office: opened in Office's own browser window. Signs the user in (single
+     * sign-on when configured, otherwise the web app's sign-in page) and ends on {@link #ofbaDone}, which tells
+     * Office it can close the window and use the session.
+     */
+    @GetMapping("/ofba/start")
+    public void ofbaStart(HttpServletRequest request, HttpServletResponse response) throws java.io.IOException {
+        request.getSession(true).setAttribute(io.nexora.identity.sso.OfbaSuccess.SESSION_FLAG, Boolean.TRUE);
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof io.nexora.identity.NexoraPrincipal) {
+            response.sendRedirect("/api/v1/auth/ofba/done");
+        } else if (idp.oidc().enabled() && !idp.localLogin()) {
+            response.sendRedirect("/oauth2/authorization/" + io.nexora.identity.sso.SsoConfig.REGISTRATION_ID);
+        } else {
+            response.sendRedirect("/?ofba=1");   // sign-in page with SSO buttons and, if enabled, local accounts
+        }
+    }
+
+    @GetMapping(path = "/ofba/done", produces = "text/html;charset=UTF-8")
+    public String ofbaDone(HttpServletRequest request) {
+        var session = request.getSession(false);
+        if (session != null) session.removeAttribute(io.nexora.identity.sso.OfbaSuccess.SESSION_FLAG);
+        return "<!doctype html><meta charset=utf-8><title>Signed in</title>"
+                + "<body style=\"font-family:Segoe UI,sans-serif;padding:32px\"><h2>You are signed in to NEXORA</h2>"
+                + "<p>You can return to Office.</p></body>";
+    }
+
     /** Primes the XSRF-TOKEN cookie for the web app. */
     @GetMapping("/csrf")
     public Map<String, String> csrf(CsrfToken token) {

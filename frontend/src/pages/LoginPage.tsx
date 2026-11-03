@@ -48,6 +48,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
     if (code) setError(new ApiError(401, code, LOGIN_ERRORS[code] ?? "Single sign-on failed. Please try again."));
   }, []);
 
+  const fromOffice = new URLSearchParams(window.location.search).has("ofba");
   const sso = providers.data?.sso ?? [];
   const localVisible = providers.data?.localLogin && (showLocal || sso.length === 0);
 
@@ -55,7 +56,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
     // come back to the page the user wanted after the round-trip through Keycloak / ADFS
     try {
       const here = window.location.pathname + window.location.search;
-      if (!here.startsWith("/?loginError")) sessionStorage.setItem(RETURN_KEY, here);
+      if (!here.startsWith("/?loginError") && !fromOffice) sessionStorage.setItem(RETURN_KEY, here);
     } catch {
       /* storage unavailable */
     }
@@ -68,7 +69,13 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
     setError(null);
     try {
       await primeCsrf();
-      onSignedIn(await api<Me>("/api/v1/auth/login", { method: "POST", body: { login, password } }));
+      const me = await api<Me>("/api/v1/auth/login", { method: "POST", body: { login, password } });
+      if (fromOffice) {
+        // opened by desktop Office (MS-OFBA): its return page tells Office to close this window
+        window.location.href = "/api/v1/auth/ofba/done";
+        return;
+      }
+      onSignedIn(me);
     } catch (err) {
       setError(err);
     } finally {
@@ -82,7 +89,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
         <Text size={600} weight="semibold" className={s.brand}>
           NEXORA
         </Text>
-        <Text>Sign in to your organization's workspace</Text>
+        <Text>{fromOffice ? "Sign in to open the document in Office" : "Sign in to your organization's workspace"}</Text>
         <ErrorBar error={error ?? providers.error} />
 
         {sso.map((p, i) => (

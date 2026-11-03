@@ -81,4 +81,45 @@ class SsoConfigurationTest extends ApiTestSupport {
         int basic = mvc.perform(as(ADMIN, get("/api/v1/sites"))).andReturn().getResponse().getStatus();
         assertThat(basic).isEqualTo(200);
     }
+
+    @Test
+    void desktopOfficeGetsFormsBasedSignInInsteadOfBasic() throws Exception {
+        var res = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request("PROPFIND", java.net.URI.create("/dav/sites/"))
+                .header("User-Agent", "Microsoft Office Word 2014 (16.0.20527) Windows NT 10.0")).andReturn().getResponse();
+        assertThat(res.getStatus()).isEqualTo(403);
+        assertThat(res.getHeader("X-FORMS_BASED_AUTH_REQUIRED")).endsWith("/api/v1/auth/ofba/start");
+        assertThat(res.getHeader("X-FORMS_BASED_AUTH_RETURN_URL")).endsWith("/api/v1/auth/ofba/done");
+        assertThat(res.getHeader("X-FORMS_BASED_AUTH_DIALOG_SIZE")).isNotBlank();
+
+        // Explorer's WebDAV redirector does not support OFBA: Basic challenge
+        var explorer = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request("PROPFIND", java.net.URI.create("/dav/sites/"))
+                .header("User-Agent", "Microsoft-WebDAV-MiniRedir/10.0.26300")).andReturn().getResponse();
+        assertThat(explorer.getStatus()).isEqualTo(401);
+        assertThat(explorer.getHeader("WWW-Authenticate")).startsWith("Basic");
+
+        // the sign-in page sends Office through single sign-on and ends on the return page
+        var start = mvc.perform(get("/api/v1/auth/ofba/start")).andReturn();
+        assertThat(start.getResponse().getStatus()).isEqualTo(302);
+        var session = (org.springframework.mock.web.MockHttpSession) start.getRequest().getSession(false);
+        assertThat(session.getAttribute("nexora.ofba")).isEqualTo(Boolean.TRUE);
+        var done = mvc.perform(get("/api/v1/auth/ofba/done").session(session)).andReturn().getResponse();
+        assertThat(done.getStatus()).isEqualTo(200);
+        assertThat(done.getContentAsString()).contains("signed in");
+    }
+
+    @Test
+    void webDavAcceptsTheSessionOfficeGotFromSignIn() throws Exception {
+        var login = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/v1/auth/login").with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf())
+                .contentType("application/json").content("{\"login\":\"admin\",\"password\":\"admin-test-pw\"}")).andReturn();
+        assertThat(login.getResponse().getStatus()).isEqualTo(200);
+        var session = (org.springframework.mock.web.MockHttpSession) login.getRequest().getSession(false);
+        var res = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request("PROPFIND", java.net.URI.create("/dav/sites/")).header("Depth", "0")
+                .header("User-Agent", "Microsoft Office Word 2014").session(session)).andReturn().getResponse();
+        // MockMvc stops at Spring's dispatcher (the WebDAV servlet is separate): passing security is what counts here
+        assertThat(res.getStatus()).isNotIn(401, 403);
+    }
 }
