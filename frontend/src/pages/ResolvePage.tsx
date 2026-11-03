@@ -8,6 +8,12 @@ import { SiteView } from "./SiteView";
 import { LibraryView } from "./LibraryView";
 import { FileView } from "./FileView";
 import { ListView } from "./ListView";
+import type { PageDetail } from "../api/types";
+import { PageScreen } from "../pagekit/PageView";
+import { SitePagesView } from "../pagekit/SitePagesView";
+
+/** /sites/<site>/SitePages[/<page>.aspx]: modern pages live beside the content tree. */
+const PAGES = /^(\/sites\/[^/]+)\/sitepages(\/.*)?$/i;
 
 /**
  * Browser URLs mirror SharePoint server-relative URLs (/sites/hr/Shared Documents/Policies),
@@ -17,6 +23,44 @@ import { ListView } from "./ListView";
 export function ResolvePage() {
   const { pathname } = useLocation();
   const path = safeDecode(pathname);
+  const pages = PAGES.exec(path);
+  if (pages) {
+    const rest = (pages[2] ?? "").replace(/^\/+|\/+$/g, "");
+    return rest ? <PageRoute path={path} /> : <PagesRoute sitePath={pages[1]} />;
+  }
+  return <NodeRoute path={path} />;
+}
+
+function PageRoute({ path }: { path: string }) {
+  const page = useQuery({
+    queryKey: ["page", path.toLowerCase()],
+    queryFn: () => api<PageDetail>(`/api/v1/pages/resolve?path=${encodeURIComponent(path)}`),
+    retry: false,
+  });
+  if (page.isPending) return <Loading />;
+  if (page.error || !page.data) return <NotFound error={page.error} />;
+  return (
+    <SiteChrome siteId={page.data.page.siteId}>
+      <PageScreen detail={page.data} />
+    </SiteChrome>
+  );
+}
+
+function PagesRoute({ sitePath }: { sitePath: string }) {
+  const site = useQuery({
+    queryKey: ["resolve", sitePath.toLowerCase()],
+    queryFn: () => api<NodeDetail>(`/api/v1/resolve?path=${encodeURIComponent(sitePath)}`),
+  });
+  if (site.isPending) return <Loading />;
+  if (site.error || !site.data || site.data.node.kind !== "SITE") return <NotFound error={site.error} />;
+  return (
+    <SiteChrome siteId={site.data.node.id}>
+      <SitePagesView site={site.data.node} />
+    </SiteChrome>
+  );
+}
+
+function NodeRoute({ path }: { path: string }) {
   const detail = useQuery({
     queryKey: ["resolve", path.toLowerCase()],
     queryFn: () => api<NodeDetail>(`/api/v1/resolve?path=${encodeURIComponent(path)}`),

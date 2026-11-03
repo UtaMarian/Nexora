@@ -160,6 +160,75 @@ export interface DesignResponse {
   design: SiteDesign;
   logoUrl?: string;
   template?: string;
+  /** a published modern page shown as the site's home page */
+  homePageId?: string;
+}
+
+// ---- modern pages (backend: io.nexora.pages) ----
+
+export type PageKind = "PAGE" | "NEWS";
+export type SectionLayout = "one" | "two" | "three" | "oneThirdLeft" | "oneThirdRight";
+export type SectionBackground = "none" | "soft" | "strong";
+export type WebPartType = "text" | "image" | "documents" | "list" | "news";
+
+export interface WebPart {
+  id: string;
+  type: WebPartType;
+  props: Record<string, unknown>;
+}
+
+export interface Section {
+  layout: SectionLayout;
+  background: SectionBackground;
+  columns: WebPart[][];
+}
+
+export interface Canvas {
+  sections: Section[];
+}
+
+export interface PageContent {
+  title: string;
+  description?: string;
+  bannerImageId?: string;
+  canvas: Canvas;
+}
+
+export interface PageSummary {
+  id: string;
+  siteId: string;
+  name: string;
+  kind: PageKind;
+  title: string;
+  description?: string;
+  url: string;
+  bannerImageId?: string;
+  excerpt?: string;
+  published: boolean;
+  hasDraft: boolean;
+  version: number;
+  author?: PrincipalRef;
+  publishedAt?: string;
+  modifiedBy?: PrincipalRef;
+  modifiedAt: string;
+  home: boolean;
+}
+
+export interface PageDetail {
+  page: PageSummary;
+  published?: PageContent;
+  draft?: PageContent;
+  revision: number;
+  canEdit: boolean;
+  canDelete: boolean;
+  canSetHome: boolean;
+}
+
+export interface PageVersion {
+  version: number;
+  title: string;
+  publishedBy?: PrincipalRef;
+  publishedAt: string;
 }
 
 export interface TemplateInfo {

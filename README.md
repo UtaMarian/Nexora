@@ -63,6 +63,11 @@ Every library and folder is reachable over WebDAV at `/dav` + its path, for exam
 HTTPS with a trusted certificate. The Docker stack serves HTTPS; on test machines trust `deploy/certs/ca.crt`.
 Directory users sign in to WebDAV with their AD user name and password.
 
+Desktop Office signs in with the Windows credential prompt by default. Microsoft 365 Apps block that prompt
+unless the NEXORA host is in Office's Basic-prompt allow list; see
+[docs/identity.md](docs/identity.md#desktop-office-sign-in-open-in-word-mapped-drives), which also shows how to
+switch to a NEXORA sign-in window (`NEXORA_OFFICE_SIGN_IN=forms`).
+
 ### Tests
 
 ```sh
@@ -92,6 +97,7 @@ cd frontend && pnpm typecheck
 | Site templates: Team, Communication, Project and Intranet portal (libraries, lists, navigation, theme, home page) | ✅ |
 | Change the look: 8 themes, header layout/background, logo, top navigation, home page (welcome, quick links, news) | ✅ |
 | Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
+| Modern pages and news posts at `/sites/<site>/SitePages/<name>.aspx`: page editor with sections (1–3 columns), text, image, documents, list and news web parts; drafts, publish, version history, use as site home page | ✅ |
 | HTTPS everywhere (nginx TLS for app, API, WebDAV, Keycloak and Collabora) | ✅ |
 | Single sign-on via Keycloak: OIDC + PKCE, AD/LDAP users and nested groups, Kerberos, AD FS (SAML) | ✅ |
 | Directory sync (AD groups usable in permissions before first sign-in), admin group mapping, Basic and bearer auth for directory users | ✅ |
@@ -102,7 +108,7 @@ cd frontend && pnpm typecheck
 1. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
 3. **Office polish**: WOPI proof-key validation, "New document" from templates.
 4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
-5. Content types and a managed-metadata term store, saved list views, modern pages with web parts, workflows (v1).
+5. Content types and a managed-metadata term store, saved list views, more web parts (quick links, events, people, embed), page templates, workflows (v1).
 
 ## Layout
 

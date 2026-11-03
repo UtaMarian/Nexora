@@ -163,7 +163,7 @@ public class PortalService {
     }
 
     /** Sniffs the image type from its first bytes; the uploaded name and content type are not trusted. */
-    static String imageType(byte[] d) {
+    public static String imageType(byte[] d) {
         if (d.length >= 8 && (d[0] & 0xFF) == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G') return "image/png";
         if (d.length >= 3 && (d[0] & 0xFF) == 0xFF && (d[1] & 0xFF) == 0xD8 && (d[2] & 0xFF) == 0xFF) return "image/jpeg";
         if (d.length >= 6 && d[0] == 'G' && d[1] == 'I' && d[2] == 'F' && d[3] == '8') return "image/gif";

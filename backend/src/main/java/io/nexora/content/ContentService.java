@@ -56,6 +56,9 @@ public class ContentService {
         this.selfServiceSites = selfServiceSites;
     }
 
+    /** URL segment of a site's modern pages (/sites/hr/SitePages/home.aspx); no library or list may use it. */
+    public static final String RESERVED_PAGES_NAME = "SitePages";
+
     // ---- lookup ----------------------------------------------------------------------------
 
     @Transactional(readOnly = true)
@@ -565,6 +568,9 @@ public class ContentService {
     // ---- helpers -----------------------------------------------------------------------------
 
     void assertNoSibling(Node parent, String name) {
+        if (parent.getKind() == Node.Kind.SITE && name.equalsIgnoreCase(RESERVED_PAGES_NAME)) {
+            throw ApiException.conflict("name_reserved", "'" + RESERVED_PAGES_NAME + "' is reserved for the site's pages");
+        }
         if (nodes.existsLiveSibling(parent.getId(), name)) {
             throw ApiException.conflict("name_conflict", "An item named '" + name + "' already exists here");
         }

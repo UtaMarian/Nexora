@@ -19,7 +19,10 @@ import {
 import {
   AddRegular,
   DeleteRegular,
+  DocumentOnePageRegular,
+  DocumentAddRegular,
   HistoryRegular,
+  NewsRegular,
   LibraryRegular,
   LinkRegular,
   PaintBrushRegular,
@@ -28,7 +31,7 @@ import {
   TextBulletListSquareRegular,
 } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
-import type { ColumnDto, DesignResponse, NodeDto } from "../api/types";
+import type { ColumnDto, DesignResponse, NodeDto, PageDetail, PageKind, PageSummary } from "../api/types";
 import { can } from "../components/me";
 import { ErrorBar, Loading } from "../components/States";
 import { formatDate, formatRelative } from "../components/format";
@@ -38,6 +41,9 @@ import { ItemDialog } from "../dialogs/ItemDialog";
 import { NewListDialog } from "../dialogs/NewListDialog";
 import { PermissionsDialog } from "../dialogs/PermissionsDialog";
 import { PromptDialog } from "../dialogs/PromptDialog";
+import { PageScreen } from "../pagekit/PageView";
+import { NewPageDialog } from "../pagekit/SitePagesView";
+import { NewsPart } from "../pagekit/WebParts";
 
 const useStyles = makeStyles({
   layout: {
@@ -62,9 +68,14 @@ const useStyles = makeStyles({
   newsBody: { whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" },
 });
 
-type DialogKind = "library" | "list" | "members" | "permissions" | "look" | null;
+type DialogKind = "library" | "list" | "members" | "permissions" | "look" | PageKind | null;
 
-/** A site's home page, assembled from its design (welcome, quick links, news, libraries, lists). */
+const HOME_NEWS = { id: "home-news", type: "news" as const, props: { title: "News", limit: 4, layout: "cards" } };
+
+/**
+ * A site's home page: a published modern page chosen as the home page, or else the built-in home assembled
+ * from the site's design (welcome, quick links, news, libraries, lists).
+ */
 export function SiteView({ site }: { site: NodeDto }) {
   const s = useStyles();
   const qc = useQueryClient();
@@ -72,6 +83,17 @@ export function SiteView({ site }: { site: NodeDto }) {
   const libraries = useQuery({ queryKey: ["libraries", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/libraries`) });
   const lists = useQuery({ queryKey: ["lists", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/lists`) });
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const homePageId = design.data?.homePageId;
+  const homePage = useQuery({
+    queryKey: ["page", "id", homePageId],
+    queryFn: () => api<PageDetail>(`/api/v1/pages/${homePageId}`),
+    enabled: !!homePageId,
+  });
+  const news = useQuery({
+    queryKey: ["news", site.id, HOME_NEWS.props.limit],
+    queryFn: () => api<PageSummary[]>(`/api/v1/sites/${site.id}/news?limit=${HOME_NEWS.props.limit}`),
+    enabled: design.isSuccess && !homePageId,
+  });
 
   const home = design.data?.design.home;
   const newsList = lists.data?.find((l) => l.id === home?.newsListId);
@@ -79,19 +101,28 @@ export function SiteView({ site }: { site: NodeDto }) {
   return (
     <>
       <Toolbar aria-label="Site commands" style={{ paddingLeft: 0, flexWrap: "wrap" }}>
-        {can(site, "MANAGE_LISTS") && (
+        {can(site, "ADD_ITEMS") && (
           <Menu>
             <MenuTrigger disableButtonEnhancement>
               <ToolbarButton appearance="primary" icon={<AddRegular />}>New</ToolbarButton>
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<LibraryRegular />} onClick={() => setDialog("library")}>Document library</MenuItem>
-                <MenuItem icon={<TextBulletListSquareRegular />} onClick={() => setDialog("list")}>List</MenuItem>
+                <MenuItem icon={<DocumentAddRegular />} onClick={() => setDialog("PAGE")}>Page</MenuItem>
+                <MenuItem icon={<NewsRegular />} onClick={() => setDialog("NEWS")}>News post</MenuItem>
+                {can(site, "MANAGE_LISTS") && (
+                  <>
+                    <MenuItem icon={<LibraryRegular />} onClick={() => setDialog("library")}>Document library</MenuItem>
+                    <MenuItem icon={<TextBulletListSquareRegular />} onClick={() => setDialog("list")}>List</MenuItem>
+                  </>
+                )}
               </MenuList>
             </MenuPopover>
           </Menu>
         )}
+        <Link to={routeFor(site.path + "/SitePages")}>
+          <ToolbarButton icon={<DocumentOnePageRegular />}>Pages</ToolbarButton>
+        </Link>
         <ToolbarButton icon={<PeopleTeamRegular />} onClick={() => setDialog("members")}>Members</ToolbarButton>
         {can(site, "MANAGE_PERMISSIONS") && (
           <ToolbarButton icon={<PeopleRegular />} onClick={() => setDialog("permissions")}>Site permissions</ToolbarButton>
@@ -109,8 +140,10 @@ export function SiteView({ site }: { site: NodeDto }) {
         )}
       </Toolbar>
 
-      <ErrorBar error={design.error} />
-      {!home ? (
+      <ErrorBar error={design.error ?? homePage.error} />
+      {homePageId ? (
+        homePage.data ? <PageScreen detail={homePage.data} asHome /> : homePage.isPending ? <Loading /> : null
+      ) : !home ? (
         <Loading />
       ) : (
         <div className={s.layout}>
@@ -121,6 +154,7 @@ export function SiteView({ site }: { site: NodeDto }) {
                 {home.welcome && <Text className={s.welcome}>{home.welcome}</Text>}
               </Card>
             )}
+            {!!news.data?.length && <NewsPart part={HOME_NEWS} siteId={site.id} />}
             {home.showNews && newsList && <NewsSection list={newsList} />}
             {home.showLibraries && (
               <ContainerSection title="Document libraries" nodes={libraries.data} error={libraries.error}
@@ -166,6 +200,7 @@ export function SiteView({ site }: { site: NodeDto }) {
       {dialog === "members" && <GroupsDialog site={site} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={site} onClose={() => setDialog(null)} />}
       {dialog === "look" && <ChangeLookDialog site={site} onClose={() => setDialog(null)} />}
+      {(dialog === "PAGE" || dialog === "NEWS") && <NewPageDialog site={site} kind={dialog} onClose={() => setDialog(null)} />}
     </>
   );
 

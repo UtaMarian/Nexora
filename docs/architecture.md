@@ -151,3 +151,23 @@ in the service layer only.
 - Draft visibility for minor versions (SharePoint's "who can see drafts") is not implemented: readers see
   the latest version, published or not.
 - New files in "require check-out" libraries are not left checked out to the uploader.
+
+## Modern pages
+
+Pages and news posts live in `site_page` (current published canvas plus a draft) and `site_page_version`
+(one snapshot per publish), apart from the node tree, at `/sites/<site>/SitePages/<name>.aspx`. The name
+`SitePages` is reserved inside sites. A canvas is a list of sections (layout `one`, `two`, `three`,
+`oneThirdLeft`, `oneThirdRight`; background `none`, `soft`, `strong`), each with columns of web parts:
+
+| Web part | Settings | Renders |
+| --- | --- | --- |
+| `text` | `html` | rich text, sanitised on the server (jsoup allow-list: headings, emphasis, lists, quotes, links) |
+| `image` | `fileId`, `alt`, `caption`, `size` | an image from the site's *Site Assets* library |
+| `documents` | `libraryId`, `title`, `limit` | latest files of a library |
+| `list` | `listId`, `title`, `limit` | latest items of a list |
+| `news` | `title`, `limit`, `layout` | the site's latest published news posts |
+
+Web parts store ids, never copies, so readers only see what their permissions allow; referenced content must
+belong to the same site. Rights come from the site: View reads published pages, Contribute creates, edits and
+publishes, deleting needs Delete Items and choosing the home page needs Manage Web. Draft saves carry a
+revision number, so two editors cannot overwrite each other silently (409 `page_changed`).

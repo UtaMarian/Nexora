@@ -94,6 +94,20 @@ export function uploadFiles(
   });
 }
 
+/** Posts one file as multipart/form-data (field "file") and returns the JSON answer. */
+export async function postFile<T>(path: string, file: File, method = "POST"): Promise<T> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const res = await fetch(path, {
+    method,
+    headers: { Accept: "application/json", ...csrfHeaders(method) },
+    body: form,
+    credentials: "same-origin",
+  });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}
+
 export const contentUrl = (id: string, opts: { versionId?: string; download?: boolean } = {}) => {
   const q = new URLSearchParams();
   if (opts.versionId) q.set("versionId", opts.versionId);

@@ -30,8 +30,11 @@ public class PortalController {
     private final PortalService portal;
     private final ContentService content;
     private final NodeMapper mapper;
+    private final io.nexora.pages.PageService pages;
 
-    public PortalController(PortalService portal, ContentService content, NodeMapper mapper) {
+    public PortalController(PortalService portal, ContentService content, NodeMapper mapper,
+                            io.nexora.pages.PageService pages) {
+        this.pages = pages;
         this.portal = portal;
         this.content = content;
         this.mapper = mapper;
@@ -41,7 +44,7 @@ public class PortalController {
 
     public record Templates(List<TemplateDto> sites, List<TemplateDto> lists) {}
 
-    public record DesignDto(SiteDesign design, String logoUrl, String template) {}
+    public record DesignDto(SiteDesign design, String logoUrl, String template, UUID homePageId) {}
 
     public record CreateListRequest(@NotBlank String name, String title, String description, ListTemplate template) {}
 
@@ -123,6 +126,6 @@ public class PortalController {
     private DesignDto dto(CurrentUser user, UUID siteId, SiteDesign design) {
         Node site = content.get(user, siteId);
         String logo = portal.logoVersion(site).map(v -> "/api/v1/sites/" + siteId + "/logo?v=" + v).orElse(null);
-        return new DesignDto(design, logo, portal.template(site).orElse(null));
+        return new DesignDto(design, logo, portal.template(site).orElse(null), pages.homePageId(site).orElse(null));
     }
 }
