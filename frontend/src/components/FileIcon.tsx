@@ -7,6 +7,8 @@ import {
   LibraryRegular,
   SlideTextRegular,
   TableRegular,
+  TaskListSquareLtrRegular,
+  TextBulletListSquareRegular,
   VideoRegular,
   FolderZipRegular,
 } from "@fluentui/react-icons";
@@ -16,6 +18,8 @@ import type { Kind } from "../api/types";
 export function FileIcon({ kind, name }: { kind: Kind; name: string }) {
   const style = { fontSize: 20, flexShrink: 0 };
   if (kind === "FOLDER") return <FolderRegular style={{ ...style, color: tokens.colorPaletteMarigoldForeground2 }} />;
+  if (kind === "LIST") return <TextBulletListSquareRegular style={{ ...style, color: tokens.colorPaletteBerryForeground2 }} />;
+  if (kind === "LIST_ITEM") return <TaskListSquareLtrRegular style={{ ...style, color: tokens.colorPaletteBerryForeground2 }} />;
   if (kind === "LIBRARY" || kind === "SITE") return <LibraryRegular style={{ ...style, color: tokens.colorBrandForeground1 }} />;
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (["doc", "docx", "odt", "rtf"].includes(ext)) return <DocumentTextRegular style={{ ...style, color: tokens.colorPaletteBlueForeground2 }} />;

@@ -24,13 +24,14 @@ public class BootstrapRunner implements ApplicationRunner {
     private final GroupMemberRepository members;
     private final NodeRepository nodes;
     private final ContentService content;
+    private final io.nexora.portal.PortalService portal;
     private final PasswordEncoder encoder;
     private final String adminLogin;
     private final String adminPassword;
     private final boolean demoData;
 
     public BootstrapRunner(PrincipalRepository principals, GroupMemberRepository members, NodeRepository nodes,
-                           ContentService content, PasswordEncoder encoder,
+                           ContentService content, io.nexora.portal.PortalService portal, PasswordEncoder encoder,
                            @Value("${nexora.bootstrap.admin-login:admin}") String adminLogin,
                            @Value("${nexora.bootstrap.admin-password:}") String adminPassword,
                            @Value("${nexora.bootstrap.demo-data:false}") boolean demoData) {
@@ -38,6 +39,7 @@ public class BootstrapRunner implements ApplicationRunner {
         this.members = members;
         this.nodes = nodes;
         this.content = content;
+        this.portal = portal;
         this.encoder = encoder;
         this.adminLogin = adminLogin;
         this.adminPassword = adminPassword;
@@ -63,8 +65,8 @@ public class BootstrapRunner implements ApplicationRunner {
         if (demoData && nodes.findLiveSites().isEmpty()) {
             Principal alice = demoUser("alice", "Alice Andersen");
             Principal bob = demoUser("bob", "Bob Becker");
-            Node site = content.createSite(CurrentUser.system(admin), "intranet", "Intranet",
-                    "Company news, policies and shared documents");
+            Node site = portal.createSite(CurrentUser.system(admin), "intranet", "Intranet",
+                    "Company news, policies and shared documents", io.nexora.portal.SiteTemplate.INTRANET);
             principals.findByKindAndLogin(Principal.Kind.GROUP, "intranet-members")
                     .ifPresent(g -> members.save(new GroupMember(g.getId(), alice.getId())));
             principals.findByKindAndLogin(Principal.Kind.GROUP, "intranet-visitors")

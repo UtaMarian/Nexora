@@ -18,8 +18,11 @@ public class SiteController {
     private final ContentService content;
     private final IdentityService identity;
     private final NodeMapper mapper;
+    private final io.nexora.portal.PortalService portal;
 
-    public SiteController(ContentService content, IdentityService identity, NodeMapper mapper) {
+    public SiteController(ContentService content, IdentityService identity, NodeMapper mapper,
+                          io.nexora.portal.PortalService portal) {
+        this.portal = portal;
         this.content = content;
         this.identity = identity;
         this.mapper = mapper;
@@ -35,7 +38,7 @@ public class SiteController {
     @ResponseStatus(HttpStatus.CREATED)
     public NodeDto create(@Valid @RequestBody CreateSiteRequest body) {
         CurrentUser user = CurrentUser.get();
-        return mapper.one(user, content.createSite(user, body.url(), body.title(), body.description()));
+        return mapper.one(user, portal.createSite(user, body.url(), body.title(), body.description(), body.template()));
     }
 
     @PatchMapping("/{id}")

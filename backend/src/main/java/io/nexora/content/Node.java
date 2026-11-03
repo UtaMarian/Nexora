@@ -19,9 +19,12 @@ import java.util.UUID;
 public class Node {
 
     public enum Kind {
-        SITE, LIBRARY, FOLDER, FILE;
+        SITE, LIBRARY, FOLDER, FILE, LIST, LIST_ITEM;
 
-        public boolean isContainer() { return this != FILE; }
+        public boolean isContainer() { return this != FILE && this != LIST_ITEM; }
+
+        /** Libraries and lists own a column schema. */
+        public boolean hasColumns() { return this == LIBRARY || this == LIST; }
     }
 
     @Id

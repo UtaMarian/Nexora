@@ -75,6 +75,7 @@ public class DavServlet extends HttpServlet {
         }
         try {
             Node n = content.resolveDecoded(user, path);
+            if (!isDavVisible(n)) return new Missing(path);   // lists are not files
             if (n.getKind() == Node.Kind.FILE && ghosts.isAliasedAway(user.id(), n.getId())) return new Missing(path);
             return new Real(n);
         } catch (ApiException e) {
@@ -156,6 +157,7 @@ public class DavServlet extends HttpServlet {
                 node(xml, user, n, hrefFor(n.getPath(), n.getKind().isContainer()));
                 if (children && n.getKind().isContainer()) {
                     for (Node c : content.children(user, n.getId())) {
+                        if (!isDavVisible(c)) continue;
                         if (c.getKind() == Node.Kind.FILE && ghosts.isAliasedAway(user.id(), c.getId())) continue;
                         node(xml, user, c, hrefFor(c.getPath(), c.getKind().isContainer()));
                     }
@@ -619,6 +621,10 @@ public class DavServlet extends HttpServlet {
         if (slash <= 0) return null;
         Target t = resolve(user, path.substring(0, slash));
         return t instanceof Real r && r.node().getKind().isContainer() ? r.node() : null;
+    }
+
+    private static boolean isDavVisible(Node n) {
+        return n.getKind() != Node.Kind.LIST && n.getKind() != Node.Kind.LIST_ITEM;
     }
 
     private String etagOf(Node n) {

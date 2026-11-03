@@ -54,7 +54,8 @@ public final class Dtos {
 
     public record Crumb(UUID id, Node.Kind kind, String name, String title, String path) {}
 
-    public record CreateSiteRequest(@NotBlank String url, String title, String description) {}
+    public record CreateSiteRequest(@NotBlank String url, String title, String description,
+                                    io.nexora.portal.SiteTemplate template) {}
 
     public record UpdateSiteRequest(String title, String description) {}
 

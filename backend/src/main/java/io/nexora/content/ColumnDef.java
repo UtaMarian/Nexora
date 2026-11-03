@@ -13,7 +13,7 @@ import java.util.UUID;
 @Table(name = "column_def")
 public class ColumnDef {
 
-    public enum Type { TEXT, NOTE, NUMBER, DATE, BOOLEAN, CHOICE }
+    public enum Type { TEXT, NOTE, NUMBER, DATE, BOOLEAN, CHOICE, URL, PERSON }
 
     @Id
     private UUID id;

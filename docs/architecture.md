@@ -54,6 +54,24 @@ endpoints all call it.
 - Planned: Keycloak (OIDC/SAML/Kerberos) replaces local passwords. `principal.external_id` holds the
   AD SID / subject for migration mapping.
 
+## Portals, branding and lists
+
+- **Site templates** (`portal/SiteTemplate`): Team, Communication, Project and Intranet portal. Creating a
+  site from a template provisions libraries and lists, then sets the navigation, theme, header and home page,
+  all in one transaction.
+- **Design** (`portal/SiteDesign`) lives in the site node's `settings.design`: theme preset, header (layout,
+  background, title, logo), top navigation, and home page (welcome, quick links, news source, sections).
+  Every link is checked server-side (`SafeUrls`): only `https://`, `http://`, `mailto:` or `/sites/...`, so
+  stored navigation can never carry `javascript:` links. The web app derives a full Fluent UI brand ramp from
+  the preset and applies it to everything inside the site.
+- **Logos** live in `site_asset`, separate from the content-addressed document blobs, so blob garbage
+  collection can never remove them. The image type is detected from the file's first bytes (PNG, JPEG, GIF,
+  WebP only; no SVG) and served with `nosniff` and a sandbox CSP.
+- **Lists** are `LIST` nodes, and their items are `LIST_ITEM` nodes named by a per-list numeric ID
+  (`/sites/x/Tasks/3`). They reuse the column engine, permissions, inheritance, recycle bin and audit log of
+  libraries. List templates provision SharePoint's standard columns. New column types: `URL` (safe links
+  only) and `PERSON` (stored as an `{id, login, displayName}` snapshot). Lists are not exposed over WebDAV.
+
 ## Office editing and co-authoring (WOPI)
 
 NEXORA is a WOPI *host*; Collabora Online is the WOPI *client* (the editor).
@@ -121,6 +139,10 @@ in the service layer only.
   run on H2 and the filesystem store.
 - Windows/Office require HTTPS for Basic authentication to WebDAV; the reference Compose stack serves HTTP.
 - Ghost files and aliases are held in memory per backend node; with several nodes, WebDAV needs sticky sessions.
+- Lists live at `/sites/<site>/<List>`, not SharePoint's `/sites/<site>/Lists/<List>`; the migration
+  redirect service maps old list URLs.
+- List views are not saved per list yet (sorting and filtering happen in the browser), and item-level
+  security ("users see only their own items") is not implemented.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.
 - Search matches names and titles only, until the OpenSearch module lands.

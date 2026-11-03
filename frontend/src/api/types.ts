@@ -1,6 +1,6 @@
 // Mirrors the REST API DTOs (backend: io.nexora.api.Dtos).
 
-export type Kind = "SITE" | "LIBRARY" | "FOLDER" | "FILE";
+export type Kind = "SITE" | "LIBRARY" | "FOLDER" | "FILE" | "LIST" | "LIST_ITEM";
 export type PermissionLevel = "READ" | "CONTRIBUTE" | "EDIT" | "FULL_CONTROL";
 export type Right =
   | "VIEW"
@@ -86,7 +86,7 @@ export interface LibrarySettings {
   maxVersions?: number | null;
 }
 
-export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE";
+export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON";
 
 export interface ColumnDto {
   id: string;
@@ -134,4 +134,47 @@ export interface Page<T> {
   page: number;
   size: number;
   total: number;
+}
+
+export interface Link {
+  label: string;
+  url: string;
+}
+
+export interface SiteDesign {
+  theme: string;
+  header: { layout: "compact" | "standard" | "extended"; background: "none" | "soft" | "strong"; showTitle: boolean; showLogo: boolean };
+  navigation: Link[];
+  home: {
+    welcomeTitle: string;
+    welcome: string;
+    quickLinks: Link[];
+    showNews: boolean;
+    newsListId?: string | null;
+    showLibraries: boolean;
+    showLists: boolean;
+  };
+}
+
+export interface DesignResponse {
+  design: SiteDesign;
+  logoUrl?: string;
+  template?: string;
+}
+
+export interface TemplateInfo {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface Templates {
+  sites: TemplateInfo[];
+  lists: TemplateInfo[];
+}
+
+export interface PersonValue {
+  id: string;
+  login: string;
+  displayName: string;
 }

@@ -27,21 +27,17 @@ import { DeleteRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import type { ColumnDto, ColumnType, LibrarySettings, NodeDto } from "../api/types";
 import { ErrorBar, Loading } from "../components/States";
+import { COLUMN_TYPES } from "../components/columns";
 
-const TYPES: { value: ColumnType; label: string }[] = [
-  { value: "TEXT", label: "Single line of text" },
-  { value: "NOTE", label: "Multiple lines of text" },
-  { value: "NUMBER", label: "Number" },
-  { value: "DATE", label: "Date" },
-  { value: "BOOLEAN", label: "Yes/No" },
-  { value: "CHOICE", label: "Choice" },
-];
+const TYPES = COLUMN_TYPES;
 
 export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; onClose: () => void }) {
   const qc = useQueryClient();
+  const isList = library.kind === "LIST";
   const settings = useQuery({
     queryKey: ["settings", library.id],
     queryFn: () => api<LibrarySettings>(`/api/v1/nodes/${library.id}/settings`),
+    enabled: !isList,
   });
   const columns = useQuery({
     queryKey: ["columns", library.id],
@@ -88,9 +84,10 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 720 }}>
         <DialogBody>
-          <DialogTitle>Library settings: {library.title ?? library.name}</DialogTitle>
+          <DialogTitle>{isList ? "List" : "Library"} settings: {library.title ?? library.name}</DialogTitle>
           <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <ErrorBar error={settings.error ?? saveSettings.error ?? addColumn.error ?? deleteColumn.error} />
+            {!isList && (<>
             <Text weight="semibold" size={400}>
               Versioning
             </Text>
@@ -132,6 +129,7 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
             )}
 
             <Divider />
+            </>)}
             <Text weight="semibold" size={400}>
               Columns
             </Text>

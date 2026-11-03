@@ -2,24 +2,21 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
   DialogContent,
   DialogSurface,
   DialogTitle,
-  Dropdown,
   Field,
   Input,
-  Option,
   Text,
-  Textarea,
 } from "@fluentui/react-components";
 import { api } from "../api/client";
 import type { ColumnDto, NodeDto } from "../api/types";
 import { ErrorBar, Loading } from "../components/States";
 import { formatDate } from "../components/format";
+import { ColumnInput, changedValues } from "../components/columns";
 
 /** Edit name and library column values of a file or folder. */
 export function PropertiesDialog({ node, libraryId, onClose }: { node: NodeDto; libraryId: string; onClose: () => void }) {
@@ -38,12 +35,7 @@ export function PropertiesDialog({ node, libraryId, onClose }: { node: NodeDto; 
     setBusy(true);
     setError(null);
     try {
-      const metadata: Record<string, unknown> = {};
-      for (const c of columns.data ?? []) {
-        const next = values[c.internalName] ?? null;
-        const prev = node.metadata?.[c.internalName] ?? null;
-        if (String(next) !== String(prev)) metadata[c.internalName] = next;
-      }
+      const metadata = changedValues(columns.data ?? [], node.metadata ?? {}, values);
       await api(`/api/v1/nodes/${node.id}`, {
         method: "PATCH",
         body: {
@@ -98,36 +90,4 @@ export function PropertiesDialog({ node, libraryId, onClose }: { node: NodeDto; 
       </DialogSurface>
     </Dialog>
   );
-}
-
-function ColumnInput({ column, value, onChange }: { column: ColumnDto; value: unknown; onChange: (v: unknown) => void }) {
-  const str = value == null ? "" : String(value);
-  switch (column.type) {
-    case "NOTE":
-      return <Textarea value={str} onChange={(_, d) => onChange(d.value)} />;
-    case "NUMBER":
-      return <Input type="number" value={str} onChange={(_, d) => onChange(d.value === "" ? null : d.value)} />;
-    case "DATE":
-      return <Input type="date" value={str.slice(0, 10)} onChange={(_, d) => onChange(d.value || null)} />;
-    case "BOOLEAN":
-      return <Checkbox checked={value === true} onChange={(_, d) => onChange(!!d.checked)} label="Yes" />;
-    case "CHOICE":
-      return (
-        <Dropdown
-          value={str}
-          selectedOptions={str ? [str] : []}
-          onOptionSelect={(_, d) => onChange(d.optionValue === "" ? null : d.optionValue)}
-          placeholder="Choose…"
-        >
-          {!column.required && <Option value="">(none)</Option>}
-          {column.choices.map((ch) => (
-            <Option key={ch} value={ch}>
-              {ch}
-            </Option>
-          ))}
-        </Dropdown>
-      );
-    default:
-      return <Input value={str} maxLength={255} onChange={(_, d) => onChange(d.value)} />;
-  }
 }

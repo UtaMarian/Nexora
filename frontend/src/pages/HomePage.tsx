@@ -16,11 +16,12 @@ import {
   Text,
   Textarea,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import { AddRegular, GlobeRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
-import type { NodeDto } from "../api/types";
+import type { NodeDto, Templates } from "../api/types";
 import { Empty, ErrorBar, Loading } from "../components/States";
 import { formatRelative } from "../components/format";
 
@@ -41,6 +42,13 @@ const useStyles = makeStyles({
   },
   desc: { color: tokens.colorNeutralForeground3 },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
+  templates: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "8px" },
+  template: {
+    border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusLarge, padding: "10px",
+    background: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground1, cursor: "pointer",
+    textAlign: "left", font: "inherit", display: "flex", flexDirection: "column", gap: "4px",
+  },
+  templateOn: { border: `2px solid ${tokens.colorBrandStroke1}`, padding: "9px" },
 });
 
 export function HomePage() {
@@ -101,6 +109,8 @@ function NewSiteDialog({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState("");
   const [urlTouched, setUrlTouched] = useState(false);
   const [description, setDescription] = useState("");
+  const [template, setTemplate] = useState("TEAM");
+  const templates = useQuery({ queryKey: ["templates"], queryFn: () => api<Templates>("/api/v1/templates"), staleTime: Infinity });
 
   const slug = (t: string) =>
     t
@@ -111,7 +121,7 @@ function NewSiteDialog({ onClose }: { onClose: () => void }) {
       .slice(0, 63);
 
   const create = useMutation({
-    mutationFn: () => api<NodeDto>("/api/v1/sites", { method: "POST", body: { url, title, description } }),
+    mutationFn: () => api<NodeDto>("/api/v1/sites", { method: "POST", body: { url, title, description, template } }),
     onSuccess: (site) => {
       qc.invalidateQueries({ queryKey: ["sites"] });
       navigate(routeFor(site.path));
@@ -120,7 +130,7 @@ function NewSiteDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -128,9 +138,19 @@ function NewSiteDialog({ onClose }: { onClose: () => void }) {
           }}
         >
           <DialogBody>
-            <DialogTitle>Create a team site</DialogTitle>
+            <DialogTitle>Create a site</DialogTitle>
             <DialogContent className={s.form}>
               <ErrorBar error={create.error} />
+              <div className={s.templates} role="radiogroup" aria-label="Site template">
+                {templates.data?.sites.map((t) => (
+                  <button key={t.id} type="button" role="radio" aria-checked={template === t.id}
+                    className={mergeClasses(s.template, template === t.id && s.templateOn)}
+                    onClick={() => setTemplate(t.id)}>
+                    <Text weight="semibold">{t.title}</Text>
+                    <Text size={200} className={s.desc}>{t.description}</Text>
+                  </button>
+                ))}
+              </div>
               <Field label="Site name" required>
                 <Input
                   value={title}
@@ -154,7 +174,8 @@ function NewSiteDialog({ onClose }: { onClose: () => void }) {
                 <Textarea value={description} onChange={(_, d) => setDescription(d.value)} />
               </Field>
               <Text size={200}>
-                The site gets Owners, Members and Visitors groups and a Documents library. You become an owner.
+                Every site gets Owners, Members and Visitors groups and a Documents library; the template adds lists,
+                libraries, navigation and a theme you can change later. You become an owner.
               </Text>
             </DialogContent>
             <DialogActions>

@@ -85,6 +85,9 @@ cd frontend && pnpm typecheck
 | Browser editing of Word, Excel, PowerPoint and OpenDocument files with real-time co-authoring (WOPI + Collabora) | ✅ |
 | Desktop Office (Word, Excel, PowerPoint) open/save via WebDAV with locks; "Open in Word" links | ✅ |
 | Map a library as a network drive (Windows, macOS, Linux); Office "safe save" keeps version history | ✅ |
+| Site templates: Team, Communication, Project and Intranet portal (libraries, lists, navigation, theme, home page) | ✅ |
+| Change the look: 8 themes, header layout/background, logo, top navigation, home page (welcome, quick links, news) | ✅ |
+| Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
 | OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` (API port) | ✅ |
 
 ## Not built yet (next slices, in plan order)
@@ -93,7 +96,7 @@ cd frontend && pnpm typecheck
 2. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
 3. **Office polish**: HTTPS by default in the Compose stack, WOPI proof-key validation, "New document" from templates.
 4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
-5. Content types and a managed-metadata term store, then lists, pages, workflows (v1).
+5. Content types and a managed-metadata term store, saved list views, modern pages with web parts, workflows (v1).
 
 ## Layout
 
@@ -104,6 +107,7 @@ backend/    Spring Boot modular monolith (Java 21)
   acl/        permission levels and the single permission-check service
   storage/    BlobStore: filesystem and S3
   audit/      audit events
+  portal/     site templates, branding (theme, header, logo, navigation, home page)
   office/     WOPI host for the browser Office editor
   dav/        WebDAV for desktop Office and mapped drives
   api/        REST controllers and DTOs (/api/v1)

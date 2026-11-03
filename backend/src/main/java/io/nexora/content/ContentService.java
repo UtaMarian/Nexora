@@ -106,8 +106,8 @@ public class ContentService {
 
     @Transactional(readOnly = true)
     public Node libraryOf(Node node) {
-        if (node.getKind() == Node.Kind.LIBRARY) return node;
-        if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("not_in_library", "Sites are not in a library");
+        if (node.getKind().hasColumns()) return node;
+        if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("not_in_library", "Sites are not in a library or list");
         String[] seg = node.getPath().split("/");   // "", "sites", site, library, ...
         String libPath = "/" + seg[1] + "/" + seg[2] + "/" + seg[3];
         return nodes.findLiveByPath(libPath)
@@ -192,6 +192,54 @@ public class ContentService {
         return lib;
     }
 
+    /** Creates a list in a site, provisioned with the template's columns. */
+    public Node createList(CurrentUser user, UUID siteId, String rawName, String title, String description,
+                           ListTemplate template) {
+        Node site = get(user, siteId);
+        if (site.getKind() != Node.Kind.SITE) throw ApiException.badRequest("not_a_site", "Lists live directly in a site");
+        permissions.require(user, site, Right.MANAGE_LISTS);
+        String name = Names.item(rawName);
+        assertNoSibling(site, name);
+        ListTemplate t = template == null ? ListTemplate.CUSTOM : template;
+        Node list = Node.create(Node.Kind.LIST, site, name, user.id());
+        list.setTitle(title == null || title.isBlank() ? name : title.strip());
+        list.setDescription(description == null || description.isBlank() ? t.description() : description);
+        Map<String, Object> settings = new HashMap<>();
+        settings.put("template", t.name());
+        settings.put("nextItemId", 1);
+        list.setSettings(settings);
+        nodes.save(list);
+        int position = 0;
+        for (ListTemplate.Column c : t.columns()) {
+            columns.save(new ColumnDef(list.getId(), Names.columnInternalName(c.displayName()), c.displayName(),
+                    c.type(), c.required(), c.choices(), position++));
+        }
+        audit.record(user, "LIST_CREATE", list, Map.of("template", t.name()));
+        return list;
+    }
+
+    /** Adds an item to a list. Items are numbered per list, like SharePoint item IDs. */
+    public Node createItem(CurrentUser user, UUID listId, String title, Map<String, Object> values) {
+        Node list = get(user, listId);
+        if (list.getKind() != Node.Kind.LIST) throw ApiException.badRequest("not_a_list", "Not a list");
+        permissions.require(user, list, Right.ADD_ITEMS);
+        if (title == null || title.isBlank()) throw ApiException.badRequest("required_column", "'Title' is required");
+        if (title.length() > 255) throw ApiException.badRequest("invalid_value", "'Title' is limited to 255 characters");
+        Map<String, Object> metadata = validateMetadata(list, Map.of(), values == null ? Map.of() : values);
+        Map<String, Object> settings = new HashMap<>(list.getSettings());
+        int itemId = settings.get("nextItemId") instanceof Number n ? n.intValue() : 1;
+        while (nodes.existsLiveSibling(list.getId(), String.valueOf(itemId))) itemId++;
+        settings.put("nextItemId", itemId + 1);
+        list.setSettings(settings);
+        Node item = Node.create(Node.Kind.LIST_ITEM, list, String.valueOf(itemId), user.id());
+        item.setTitle(title.strip());
+        item.setMetadata(metadata);
+        nodes.save(item);
+        list.touch(user.id());
+        audit.record(user, "ITEM_CREATE", item, Map.of("title", item.getTitle()));
+        return item;
+    }
+
     public Node createFolder(CurrentUser user, UUID parentId, String rawName) {
         Node parent = get(user, parentId);
         if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER) {
@@ -230,11 +278,17 @@ public class ContentService {
         Node node = get(user, id);
         Right needed = switch (node.getKind()) {
             case SITE -> Right.MANAGE_WEB;
-            case LIBRARY -> Right.MANAGE_LISTS;
+            case LIBRARY, LIST -> Right.MANAGE_LISTS;
             default -> Right.EDIT_ITEMS;
         };
         permissions.require(user, node, needed);
         assertNotLockedByOthers(user, node);
+        if (node.getKind() == Node.Kind.LIST_ITEM) {
+            if (newName != null && !newName.equals(node.getName())) {
+                throw ApiException.badRequest("item_id_immutable", "List item IDs cannot be changed; edit the Title instead");
+            }
+            if (title != null && title.isBlank()) throw ApiException.badRequest("required_column", "'Title' is required");
+        }
 
         if (newName != null && !newName.equals(node.getName())) {
             if (node.getKind() == Node.Kind.SITE) {
@@ -251,8 +305,9 @@ public class ContentService {
         if (title != null) node.setTitle(title.isBlank() ? null : title.strip());
         if (description != null) node.setDescription(description);
         if (metadataPatch != null) {
-            if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER) {
-                throw ApiException.badRequest("no_metadata", "Only files and folders carry column values");
+            if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER
+                    && node.getKind() != Node.Kind.LIST_ITEM) {
+                throw ApiException.badRequest("no_metadata", "Only files, folders and list items carry column values");
             }
             Map<String, Object> merged = validateMetadata(libraryOf(node), node.getMetadata(), metadataPatch);
             node.setMetadata(merged);
@@ -309,7 +364,7 @@ public class ContentService {
             case SITE -> {
                 if (!user.admin()) throw ApiException.forbidden("Only administrators can delete sites");
             }
-            case LIBRARY -> permissions.require(user, node, Right.MANAGE_LISTS);
+            case LIBRARY, LIST -> permissions.require(user, node, Right.MANAGE_LISTS);
             default -> permissions.require(user, node, Right.DELETE_ITEMS);
         }
         assertNotLockedByOthers(user, node);
@@ -392,7 +447,7 @@ public class ContentService {
     public ColumnDef addColumn(CurrentUser user, UUID libraryId, String displayName, ColumnDef.Type type,
                                boolean required, List<String> choices) {
         Node lib = get(user, libraryId);
-        if (lib.getKind() != Node.Kind.LIBRARY) throw ApiException.badRequest("not_a_library", "Not a library");
+        if (!lib.getKind().hasColumns()) throw ApiException.badRequest("not_a_library", "Not a library or list");
         permissions.require(user, lib, Right.MANAGE_LISTS);
         if (displayName == null || displayName.isBlank()) {
             throw ApiException.badRequest("invalid_column", "Column name is required");
@@ -445,7 +500,7 @@ public class ContentService {
         return merged;
     }
 
-    private static Object coerce(ColumnDef def, Object value) {
+    private Object coerce(ColumnDef def, Object value) {
         String label = "'" + def.getDisplayName() + "'";
         return switch (def.getType()) {
             case TEXT -> {
@@ -483,6 +538,26 @@ public class ContentService {
                     throw ApiException.badRequest("invalid_value", label + " must be one of " + def.getChoices());
                 }
                 yield s;
+            }
+            case URL -> {
+                String s = value.toString().strip();
+                if (!SafeUrls.isSafe(s)) {
+                    throw ApiException.badRequest("invalid_value", label + " must be a web address (https://...) or a /sites/... path");
+                }
+                yield s;
+            }
+            case PERSON -> {
+                // accept a principal id, a login, or an object with an "id"; store a small snapshot for display
+                String ref = value instanceof Map<?, ?> m && m.get("id") != null ? m.get("id").toString() : value.toString().strip();
+                Principal p;
+                try {
+                    p = principals.findById(UUID.fromString(ref)).orElse(null);
+                } catch (IllegalArgumentException notUuid) {
+                    p = principals.findByKindAndLogin(Principal.Kind.USER, ref)
+                            .or(() -> principals.findByKindAndLogin(Principal.Kind.GROUP, ref)).orElse(null);
+                }
+                if (p == null || !p.isEnabled()) throw ApiException.badRequest("invalid_value", label + ": unknown person");
+                yield Map.of("id", p.getId().toString(), "login", p.getLogin(), "displayName", p.getDisplayName());
             }
         };
     }
