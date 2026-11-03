@@ -1,0 +1,63 @@
+# Demo directory for testing AD/LDAP federation and group sync (compose profile "demo-directory").
+# Passwords are for local testing only.
+dn: ou=People,dc=corp,dc=nexora,dc=test
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=corp,dc=nexora,dc=test
+objectClass: organizationalUnit
+ou: Groups
+
+dn: uid=jdoe,ou=People,dc=corp,dc=nexora,dc=test
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: jdoe
+cn: John Doe
+givenName: John
+sn: Doe
+mail: john.doe@corp.nexora.test
+userPassword: Demo-Pass-1
+
+dn: uid=msmith,ou=People,dc=corp,dc=nexora,dc=test
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: msmith
+cn: Maria Smith
+givenName: Maria
+sn: Smith
+mail: maria.smith@corp.nexora.test
+userPassword: Demo-Pass-2
+
+dn: uid=atan,ou=People,dc=corp,dc=nexora,dc=test
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+uid: atan
+cn: Ana Tan
+givenName: Ana
+sn: Tan
+mail: ana.tan@corp.nexora.test
+userPassword: Demo-Pass-3
+
+dn: cn=Backend,ou=Groups,dc=corp,dc=nexora,dc=test
+objectClass: groupOfNames
+cn: Backend
+member: uid=atan,ou=People,dc=corp,dc=nexora,dc=test
+
+dn: cn=Engineering,ou=Groups,dc=corp,dc=nexora,dc=test
+objectClass: groupOfNames
+cn: Engineering
+member: uid=jdoe,ou=People,dc=corp,dc=nexora,dc=test
+member: cn=Backend,ou=Groups,dc=corp,dc=nexora,dc=test
+
+dn: cn=Finance,ou=Groups,dc=corp,dc=nexora,dc=test
+objectClass: groupOfNames
+cn: Finance
+member: uid=msmith,ou=People,dc=corp,dc=nexora,dc=test
+
+dn: cn=NEXORA Admins,ou=Groups,dc=corp,dc=nexora,dc=test
+objectClass: groupOfNames
+cn: NEXORA Admins
+member: uid=jdoe,ou=People,dc=corp,dc=nexora,dc=test

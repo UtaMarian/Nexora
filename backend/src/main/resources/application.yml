@@ -75,6 +75,27 @@ nexora:
       create-bucket: ${NEXORA_S3_CREATE_BUCKET:true}
   sites:
     self-service: ${NEXORA_SELF_SERVICE_SITES:true}
+  identity:
+    # Local accounts (bootstrap admin, break-glass). Directory users never have local passwords.
+    local-login: ${NEXORA_LOCAL_LOGIN:true}
+    oidc:
+      # Single sign-on through Keycloak (which federates AD/LDAP, Kerberos and brokers ADFS).
+      enabled: ${NEXORA_OIDC_ENABLED:false}
+      display-name: ${NEXORA_OIDC_DISPLAY_NAME:Organization account}
+      public-url: ${NEXORA_OIDC_PUBLIC_URL:https://localhost:8443/auth}
+      internal-url: ${NEXORA_OIDC_INTERNAL_URL:}
+      realm: ${NEXORA_OIDC_REALM:nexora}
+      client-id: ${NEXORA_OIDC_CLIENT_ID:nexora}
+      client-secret: ${NEXORA_OIDC_CLIENT_SECRET:}
+      post-logout-redirect-uri: ${NEXORA_OIDC_POST_LOGOUT_URI:}
+      admin-groups: ${NEXORA_ADMIN_GROUPS:/NEXORA Admins}
+      directory-basic-auth: ${NEXORA_DIRECTORY_BASIC_AUTH:true}
+      identity-providers: []
+    sync:
+      enabled: ${NEXORA_DIRECTORY_SYNC:false}
+      client-id: ${NEXORA_SYNC_CLIENT_ID:nexora-sync}
+      client-secret: ${NEXORA_SYNC_CLIENT_SECRET:}
+      interval: ${NEXORA_SYNC_INTERVAL:15m}
   office:
     # Browser editing and co-authoring through Collabora Online (WOPI).
     enabled: ${NEXORA_OFFICE_ENABLED:true}

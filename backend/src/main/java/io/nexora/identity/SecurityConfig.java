@@ -39,17 +39,22 @@ public class SecurityConfig {
 
     @Bean
     @org.springframework.core.annotation.Order(2)
-    SecurityFilterChain api(HttpSecurity http) throws Exception {
+    SecurityFilterChain api(HttpSecurity http,
+                            org.springframework.beans.factory.ObjectProvider<io.nexora.identity.sso.SsoConfig.SsoSecurity> sso,
+                            io.nexora.identity.sso.IdentityProperties identity,
+                            AuthProviders authProviders) throws Exception {
         // WOPI calls come server-to-server from the Office editor and carry a signed access_token, not a cookie.
         RequestMatcher csrfRequired = request ->
                 !SAFE_METHODS.contains(request.getMethod())
                         && request.getHeader("Authorization") == null
                         && !request.getRequestURI().startsWith("/wopi/");
 
+        // Add (not replace) our providers, so the OIDC login and bearer-token providers Spring registers still apply.
+        authProviders.providers().forEach(http::authenticationProvider);
         http
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf").permitAll()
+                .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf", "/api/v1/auth/providers").permitAll()
                 .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
@@ -63,8 +68,27 @@ public class SecurityConfig {
             .securityContext(ctx -> ctx.securityContextRepository(securityContextRepository()))
             .logout(logout -> logout
                 .logoutUrl("/api/v1/auth/logout")
-                .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_NO_CONTENT)))
+                .logoutSuccessHandler(new io.nexora.identity.sso.SsoLogoutSuccessHandler(identity.oidc())))
             .formLogin(form -> form.disable());
+
+        io.nexora.identity.sso.SsoConfig.SsoSecurity s = sso.getIfAvailable();
+        if (s != null) {
+            // Browser single sign-on (Authorization Code + PKCE) and bearer tokens for scripts and integrations.
+            http.oauth2Login(o -> o
+                    .clientRegistrationRepository(s.registrations())
+                    .authorizationEndpoint(a -> a.authorizationRequestResolver(s.requestResolver()))
+                    .userInfoEndpoint(u -> u.oidcUserService(s.userService()))
+                    .securityContextRepository(securityContextRepository())
+                    .defaultSuccessUrl("/", true)
+                    .failureHandler((req, res, ex) -> {
+                        String code = ex instanceof org.springframework.security.oauth2.core.OAuth2AuthenticationException o2
+                                ? o2.getError().getErrorCode() : "login_failed";
+                        res.sendRedirect("/?loginError=" + java.net.URLEncoder.encode(code, java.nio.charset.StandardCharsets.UTF_8));
+                    }))
+                .oauth2ResourceServer(o -> o
+                    .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
+                    .jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
+        }
         return http.build();
     }
 
@@ -89,11 +113,24 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    /** Username/password providers: local accounts, then directory users (password checked by AD via Keycloak). */
+    public record AuthProviders(java.util.List<org.springframework.security.authentication.AuthenticationProvider> providers) {}
+
     @Bean
-    AuthenticationManager authenticationManager(DbUserDetailsService users, PasswordEncoder encoder) {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(users);
-        provider.setPasswordEncoder(encoder);
-        return new ProviderManager(provider);
+    AuthProviders authProviders(DbUserDetailsService users, PasswordEncoder encoder,
+            org.springframework.beans.factory.ObjectProvider<io.nexora.identity.sso.SsoConfig.DirectoryBasicAuth> directory) {
+        DaoAuthenticationProvider local = new DaoAuthenticationProvider(users);
+        local.setPasswordEncoder(encoder);
+        java.util.List<org.springframework.security.authentication.AuthenticationProvider> providers = new java.util.ArrayList<>();
+        providers.add(local);
+        directory.ifAvailable(d -> providers.add(d.provider()));
+        return new AuthProviders(java.util.List.copyOf(providers));
+    }
+
+    /** Used by the JSON login endpoint. */
+    @Bean
+    AuthenticationManager authenticationManager(AuthProviders authProviders) {
+        return new ProviderManager(authProviders.providers());
     }
 
     /** CSRF handling for a single-page app, as recommended in the Spring Security reference. */

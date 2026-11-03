@@ -13,6 +13,9 @@ import { RecycleBinPage } from "./pages/RecycleBinPage";
 import { AuditPage } from "./pages/AuditPage";
 import { SearchPage } from "./pages/SearchPage";
 import { OfficePage } from "./pages/OfficePage";
+import { DirectoryPage } from "./pages/DirectoryPage";
+import { RETURN_KEY } from "./pages/LoginPage";
+import { useNavigate } from "react-router-dom";
 import { NotFound } from "./components/States";
 
 export function App() {
@@ -25,6 +28,21 @@ export function App() {
     },
     retry: false,
   });
+
+  // after single sign-on, return to the page the user originally asked for
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!me.data) return;
+    let target: string | null = null;
+    try {
+      target = sessionStorage.getItem(RETURN_KEY);
+      sessionStorage.removeItem(RETURN_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+    if (target && target.startsWith("/") && !target.startsWith("//")) navigate(target, { replace: true });
+    else if (window.location.search.includes("loginError")) navigate("/", { replace: true });
+  }, [me.data, navigate]);
 
   useEffect(() => {
     const onUnauthorized = () => qc.setQueryData(["me"], null);
@@ -50,6 +68,7 @@ export function App() {
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/office/:id" element={<OfficePage />} />
+          <Route path="/admin/directory" element={<DirectoryPage />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AppShell>

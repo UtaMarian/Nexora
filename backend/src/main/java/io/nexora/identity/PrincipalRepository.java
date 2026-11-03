@@ -22,4 +22,9 @@ public interface PrincipalRepository extends JpaRepository<Principal, UUID> {
     List<Principal> search(@Param("q") String q);
 
     List<Principal> findBySiteId(UUID siteId);
+
+    Optional<Principal> findByExternalId(String externalId);
+
+    @Query("select p from Principal p where p.externalId like concat(:prefix, '%')")
+    List<Principal> findByExternalIdPrefix(@Param("prefix") String prefix);
 }

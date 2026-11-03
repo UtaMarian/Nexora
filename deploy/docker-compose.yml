@@ -1,9 +1,10 @@
-# NEXORA single-host install: PostgreSQL, S3 object storage (SeaweedFS), Office editor (Collabora Online),
-# API server and web app.
+# NEXORA single-host install over HTTPS: PostgreSQL, S3 object storage (SeaweedFS), Keycloak (sign-in, AD/LDAP,
+# Kerberos, ADFS), Collabora Online (browser Office editing), API server and web app.
 #
-#   cp .env.example .env    # set real passwords
+#   cp .env.example .env              # set real passwords and your host name
+#   ./scripts/make-dev-certs.sh       # or put your own tls.crt / tls.key in ./certs
 #   docker compose up -d --build
-#   open http://localhost:8088
+#   open https://localhost:8443
 #
 # Production installs can point NEXORA at an existing S3 store (Ceph, NetApp, Dell ECS, AWS) instead of SeaweedFS.
 name: nexora
@@ -40,7 +41,105 @@ services:
       timeout: 3s
       retries: 30
 
-  # Collabora Online (CODE): browser editing and real-time co-authoring of Word, Excel and PowerPoint files.
+  # ---- identity ----------------------------------------------------------------------------------------------
+
+  keycloak-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD in .env}
+    volumes:
+      - keycloak-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Keycloak: OIDC provider for NEXORA; federates AD/LDAP (users, groups, Kerberos) and brokers ADFS (SAML).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    restart: unless-stopped
+    command:
+      - start
+      - --http-enabled=true
+      - --http-relative-path=/auth
+      - --hostname=https://${NEXORA_PUBLIC_HOST:-localhost:8443}/auth
+      - --hostname-backchannel-dynamic=true
+      - --proxy-headers=xforwarded
+      - --health-enabled=true
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+      # Kerberos: point Java at your realm, e.g. -Djava.security.krb5.conf=/opt/keycloak/conf/nexora/krb5.conf
+      JAVA_OPTS_APPEND: ${KEYCLOAK_JAVA_OPTS:-}
+    volumes:
+      # Kerberos keytab (nexora.keytab) and krb5.conf for SPNEGO single sign-on, when used
+      - ./keycloak:/opt/keycloak/conf/nexora:ro
+    depends_on:
+      keycloak-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # One-shot, idempotent Keycloak setup (realm, clients, AD/LDAP, Kerberos, ADFS). Holds the Keycloak master
+  # admin password so the long-running NEXORA server never has to.
+  keycloak-provision:
+    image: nexora/backend:local
+    restart: "no"
+    entrypoint: ["java", "-cp", "/opt/nexora/nexora.jar", "-Dloader.main=io.nexora.tools.KeycloakProvisioner",
+                 "org.springframework.boot.loader.launch.PropertiesLauncher"]
+    depends_on:
+      keycloak: { condition: service_healthy }
+      ldap: { condition: service_started, required: false }
+    environment:
+      KC_URL: http://keycloak:8080/auth
+      KC_ADMIN: admin
+      KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      REALM: nexora
+      PUBLIC_URL: https://${NEXORA_PUBLIC_HOST:-localhost:8443}
+      OIDC_CLIENT_SECRET: ${NEXORA_OIDC_CLIENT_SECRET:?set NEXORA_OIDC_CLIENT_SECRET in .env}
+      SYNC_CLIENT_SECRET: ${NEXORA_SYNC_CLIENT_SECRET:?set NEXORA_SYNC_CLIENT_SECRET in .env}
+      ADMIN_GROUP: ${NEXORA_ADMIN_GROUP:-NEXORA Admins}
+      LDAP_URL: ${LDAP_URL:-}
+      LDAP_VENDOR: ${LDAP_VENDOR:-ad}
+      LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+      LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
+      LDAP_USERS_DN: ${LDAP_USERS_DN:-}
+      LDAP_GROUPS_DN: ${LDAP_GROUPS_DN:-}
+      KERBEROS_REALM: ${KERBEROS_REALM:-}
+      KERBEROS_PRINCIPAL: ${KERBEROS_PRINCIPAL:-}
+      KERBEROS_KEYTAB: /opt/keycloak/conf/nexora/nexora.keytab
+      ADFS_METADATA_URL: ${ADFS_METADATA_URL:-}
+      ADFS_ALIAS: ${ADFS_ALIAS:-adfs}
+      ADFS_DISPLAY_NAME: ${ADFS_DISPLAY_NAME:-ADFS}
+
+  # Demo directory to try AD/LDAP federation without a domain controller: docker compose --profile demo-directory up
+  ldap:
+    image: osixia/openldap:1.5.0
+    profiles: ["demo-directory"]
+    restart: unless-stopped
+    command: --copy-service
+    environment:
+      LDAP_ORGANISATION: NEXORA Demo
+      LDAP_DOMAIN: corp.nexora.test
+      LDAP_ADMIN_PASSWORD: ${LDAP_BIND_PASSWORD:-demo-ldap-admin}
+      LDAP_TLS: "false"
+    volumes:
+      - ./ldap/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif:ro
+
+  # ---- office ------------------------------------------------------------------------------------------------
+
+  # Collabora Online (CODE): browser editing and real-time co-authoring. Served through the web container's TLS.
   collabora:
     image: collabora/code:26.04.5.1.1
     restart: unless-stopped
@@ -50,27 +149,30 @@ services:
       # WOPI hosts allowed to serve documents: the backend container, and a backend run outside Docker (dev).
       aliasgroup1: http://backend:8080
       aliasgroup2: http://host.docker.internal:8080
-      # Host and port browsers use to reach the editor.
-      server_name: ${NEXORA_OFFICE_PUBLIC_HOST:-localhost:9980}
+      server_name: ${NEXORA_PUBLIC_HOST:-localhost:8443}
       username: admin
       password: ${NEXORA_OFFICE_ADMIN_PASSWORD:?set NEXORA_OFFICE_ADMIN_PASSWORD in .env}
       dictionaries: en_US en_GB de_DE fr_FR es_ES it_IT ro_RO
       extra_params: >-
         --o:ssl.enable=false
-        --o:ssl.termination=false
+        --o:ssl.termination=true
         --o:net.frame_ancestors=${NEXORA_OFFICE_FRAME_ANCESTORS:-localhost:*}
         --o:welcome.enable=false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "${NEXORA_OFFICE_PORT:-9980}:9980"
+      - "127.0.0.1:9980:9980"   # for a backend run outside Docker (development) only
+
+  # ---- NEXORA --------------------------------------------------------------------------------------------------
 
   backend:
     build: ../backend
+    image: nexora/backend:local
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
       s3: { condition: service_healthy }
+      keycloak-provision: { condition: service_completed_successfully }
       collabora: { condition: service_started }
     environment:
       NEXORA_DB_URL: jdbc:postgresql://db:5432/nexora
@@ -87,16 +189,41 @@ services:
       NEXORA_WOPI_TOKEN_SECRET: ${NEXORA_WOPI_TOKEN_SECRET:?set NEXORA_WOPI_TOKEN_SECRET in .env}
       NEXORA_BOOTSTRAP_ADMIN_PASSWORD: ${NEXORA_BOOTSTRAP_ADMIN_PASSWORD:?set NEXORA_BOOTSTRAP_ADMIN_PASSWORD in .env}
       NEXORA_DEMO_DATA: ${NEXORA_DEMO_DATA:-false}
-      NEXORA_SECURE_COOKIES: ${NEXORA_SECURE_COOKIES:-false}
+      NEXORA_SECURE_COOKIES: "true"
+      # troubleshooting sign-in: NEXORA_SECURITY_LOG=DEBUG
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${NEXORA_SECURITY_LOG:-INFO}
+      # single sign-on and directory sync through Keycloak
+      NEXORA_LOCAL_LOGIN: ${NEXORA_LOCAL_LOGIN:-true}
+      NEXORA_OIDC_ENABLED: "true"
+      NEXORA_OIDC_DISPLAY_NAME: ${NEXORA_OIDC_DISPLAY_NAME:-Organization account}
+      NEXORA_OIDC_PUBLIC_URL: https://${NEXORA_PUBLIC_HOST:-localhost:8443}/auth
+      NEXORA_OIDC_INTERNAL_URL: http://keycloak:8080/auth
+      NEXORA_OIDC_CLIENT_SECRET: ${NEXORA_OIDC_CLIENT_SECRET}
+      NEXORA_OIDC_POST_LOGOUT_URI: https://${NEXORA_PUBLIC_HOST:-localhost:8443}/
+      NEXORA_ADMIN_GROUPS: /${NEXORA_ADMIN_GROUP:-NEXORA Admins}
+      NEXORA_DIRECTORY_SYNC: "true"
+      NEXORA_SYNC_CLIENT_SECRET: ${NEXORA_SYNC_CLIENT_SECRET}
+      NEXORA_SYNC_INTERVAL: ${NEXORA_SYNC_INTERVAL:-15m}
+      # extra sign-in button for ADFS (brokered by Keycloak); empty alias = no button
+      NEXORA_IDENTITY_OIDC_IDENTITYPROVIDERS_0_ALIAS: ${NEXORA_ADFS_BUTTON_ALIAS:-}
+      NEXORA_IDENTITY_OIDC_IDENTITYPROVIDERS_0_LABEL: ${NEXORA_ADFS_BUTTON_LABEL:-Sign in with ADFS}
 
   web:
     build: ../frontend
     restart: unless-stopped
     depends_on:
       - backend
+      - keycloak
+      - collabora
+    environment:
+      NEXORA_PUBLIC_HOST: ${NEXORA_PUBLIC_HOST:-localhost:8443}
+    volumes:
+      - ./certs:/etc/nginx/certs
     ports:
+      - "${NEXORA_HTTPS_PORT:-8443}:443"
       - "${NEXORA_HTTP_PORT:-8088}:80"
 
 volumes:
   db-data:
   blob-data:
+  keycloak-data:

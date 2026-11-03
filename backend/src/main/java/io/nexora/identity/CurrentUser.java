@@ -12,8 +12,8 @@ public record CurrentUser(UUID id, String login, String displayName, boolean adm
 
     public static CurrentUser get() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof NexoraUserDetails u) {
-            return new CurrentUser(u.getId(), u.getUsername(), u.getDisplayName(), u.isAdmin());
+        if (auth != null && auth.getPrincipal() instanceof NexoraPrincipal u) {
+            return new CurrentUser(u.getId(), u.getLogin(), u.getDisplayName(), u.isAdmin());
         }
         throw new ApiException(HttpStatus.UNAUTHORIZED, "unauthenticated", "Not signed in");
     }

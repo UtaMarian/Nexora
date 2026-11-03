@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Spring Security view of a NEXORA user; carries the stable principal id used by the ACL engine. */
-public class NexoraUserDetails implements UserDetails {
+public class NexoraUserDetails implements UserDetails, NexoraPrincipal {
     private final UUID id;
     private final String login;
     private final String displayName;
@@ -27,6 +27,7 @@ public class NexoraUserDetails implements UserDetails {
     }
 
     public UUID getId() { return id; }
+    @Override public String getLogin() { return login; }
     public String getDisplayName() { return displayName; }
     public boolean isAdmin() { return admin; }
 

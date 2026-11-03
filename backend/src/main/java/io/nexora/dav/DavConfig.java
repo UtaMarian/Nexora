@@ -36,12 +36,15 @@ public class DavConfig {
      */
     @Bean
     @Order(1)
-    SecurityFilterChain davSecurity(HttpSecurity http) throws Exception {
+    SecurityFilterChain davSecurity(HttpSecurity http,
+            org.springframework.beans.factory.ObjectProvider<io.nexora.identity.sso.SsoConfig.SsoSecurity> sso,
+            io.nexora.identity.SecurityConfig.AuthProviders authProviders) throws Exception {
         BasicAuthenticationEntryPoint challenge = new BasicAuthenticationEntryPoint();
         challenge.setRealmName("NEXORA");
         challenge.afterPropertiesSet();
         // Path-pattern matchers: the MVC-based default does not see requests served by the WebDAV servlet.
         var paths = PathPatternRequestMatcher.withDefaults();
+        authProviders.providers().forEach(http::authenticationProvider);
         http.securityMatcher(paths.matcher("/dav/**"))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers(paths.matcher(HttpMethod.OPTIONS, "/dav/**")).permitAll()
@@ -50,6 +53,13 @@ public class DavConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(challenge))
                 .csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        sso.ifAvailable(s -> {
+            try {
+                http.oauth2ResourceServer(o -> o.jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
         return http.build();
     }
 }

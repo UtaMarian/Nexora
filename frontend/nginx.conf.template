@@ -1,0 +1,105 @@
+# NEXORA front door: TLS termination for the web app, API, WebDAV, sign-in (Keycloak) and the Office editor
+# (Collabora), all on one origin. ${NEXORA_PUBLIC_HOST} is substituted at container start.
+
+server {
+    listen 80;
+    server_name _;
+    location / {
+        return 301 https://${NEXORA_PUBLIC_HOST}$request_uri;
+    }
+}
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+
+    client_max_body_size 4g;
+    proxy_buffer_size 128k;          # Keycloak/SAML responses carry large headers
+    proxy_buffers 8 128k;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $http_host;
+
+    # ---- NEXORA API, sign-in callbacks, WebDAV ----
+    location /api/ {
+        proxy_pass http://backend:8080;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+    location /oauth2/ { proxy_pass http://backend:8080; }
+    location /login/oauth2/ { proxy_pass http://backend:8080; }
+    location /dav {
+        proxy_pass http://backend:8080;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    # WOPI is server-to-server (Office editor -> backend) and is never served to browsers.
+    location /wopi/ { return 404; }
+
+    # ---- Keycloak (sign-in pages, AD/LDAP, Kerberos, ADFS brokering) ----
+    location /auth/ {
+        proxy_pass http://keycloak:8080;
+    }
+    # Keycloak's admin console is for administrators on the internal network only.
+    location /auth/admin/ {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://keycloak:8080;
+    }
+
+    # ---- Collabora Online (browser Office editing) ----
+    location ^~ /browser { proxy_pass http://collabora:9980; }
+    location ^~ /hosting/discovery { proxy_pass http://collabora:9980; }
+    location ^~ /hosting/capabilities { proxy_pass http://collabora:9980; }
+    location ~ ^/cool/(.*)/ws$ {
+        proxy_pass http://collabora:9980;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 36000s;
+    }
+    location ^~ /cool/adminws {
+        proxy_pass http://collabora:9980;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 36000s;
+    }
+    location ~ ^/(c|l)ool { proxy_pass http://collabora:9980; }
+
+    # ---- web app ----
+    location /assets/ {
+        root /usr/share/nginx/html;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri /index.html;
+        add_header X-Frame-Options SAMEORIGIN always;
+    }
+}

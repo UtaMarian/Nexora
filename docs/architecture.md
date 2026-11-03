@@ -51,8 +51,9 @@ endpoints all call it.
   matching the `XSRF-TOKEN` cookie.
 - Scripts: HTTP Basic on each request. Requests with an `Authorization` header carry no ambient
   credentials, so CSRF does not apply to them.
-- Planned: Keycloak (OIDC/SAML/Kerberos) replaces local passwords. `principal.external_id` holds the
-  AD SID / subject for migration mapping.
+- Single sign-on: OIDC against Keycloak, which federates AD/LDAP and Kerberos and brokers AD FS. Directory
+  principals carry `external_id` (`kc:<id>`, `kc-group:<path>`, `idp-group:<name>`), and their group memberships
+  are owned by the directory. See [identity.md](identity.md).
 
 ## Portals, branding and lists
 
@@ -137,7 +138,8 @@ in the service layer only.
 - The Compose stack uses SeaweedFS for S3, because MinIO stopped publishing container images. Any
   S3-compatible store works. The PostgreSQL + S3 path has been smoke-tested, but the automated tests
   run on H2 and the filesystem store.
-- Windows/Office require HTTPS for Basic authentication to WebDAV; the reference Compose stack serves HTTP.
+- Kerberos is configured at Keycloak (browser sign-on). WebDAV clients use Basic with the AD password, not
+  SPNEGO, and AD FS users without an AD/LDAP connection have no password for WebDAV (bearer tokens only).
 - Ghost files and aliases are held in memory per backend node; with several nodes, WebDAV needs sticky sessions.
 - Lists live at `/sites/<site>/<List>`, not SharePoint's `/sites/<site>/Lists/<List>`; the migration
   redirect service maps old list URLs.

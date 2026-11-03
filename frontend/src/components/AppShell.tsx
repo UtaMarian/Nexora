@@ -15,7 +15,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { TOASTER_ID } from "./ItemActions";
-import { DeleteRegular, HistoryRegular, HomeRegular, SearchRegular, SignOutRegular } from "@fluentui/react-icons";
+import { DeleteRegular, HistoryRegular, HomeRegular, PeopleTeamRegular, SearchRegular, SignOutRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import { useMe } from "./me";
 
@@ -64,8 +64,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [q, setQ] = useState("");
 
   const signOut = async () => {
-    await api("/api/v1/auth/logout", { method: "POST" }).catch(() => undefined);
+    const res = await api<{ redirect?: string } | undefined>("/api/v1/auth/logout", { method: "POST" }).catch(() => undefined);
     qc.clear();
+    if (res?.redirect) {
+      // single sign-on: also end the Keycloak (and ADFS) session, then come back to the sign-in page
+      window.location.href = res.redirect;
+      return;
+    }
     qc.setQueryData(["me"], null);
     navigate("/");
   };
@@ -106,6 +111,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink to="/audit" className={s.navLink} title="Audit log">
               <HistoryRegular />
               <span>Audit</span>
+            </NavLink>
+          )}
+          {me.admin && (
+            <NavLink to="/admin/directory" className={s.navLink} title="Directory">
+              <PeopleTeamRegular />
+              <span>Directory</span>
             </NavLink>
           )}
         </nav>

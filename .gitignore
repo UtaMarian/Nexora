@@ -18,3 +18,11 @@ backend/data/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+
+# TLS keys and Kerberos keytabs never go into git
+deploy/certs/
+deploy/keycloak/*.keytab
+
+# local env files hold secrets; only the example is committed
+deploy/.env*
+!deploy/.env.example

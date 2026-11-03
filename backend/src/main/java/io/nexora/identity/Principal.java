@@ -59,6 +59,7 @@ public class Principal {
     public Kind getKind() { return kind; }
     public boolean isGroup() { return kind == Kind.GROUP; }
     public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
     public String getEmail() { return email; }

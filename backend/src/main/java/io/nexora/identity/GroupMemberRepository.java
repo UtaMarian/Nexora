@@ -9,5 +9,6 @@ import java.util.UUID;
 public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupMember.Key> {
     List<GroupMember> findByMemberIdIn(Collection<UUID> memberIds);
     List<GroupMember> findByGroupId(UUID groupId);
+    List<GroupMember> findByMemberId(UUID memberId);
     boolean existsByGroupIdAndMemberId(UUID groupId, UUID memberId);
 }

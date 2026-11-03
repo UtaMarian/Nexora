@@ -8,6 +8,12 @@ COPY . .
 RUN pnpm build
 
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+RUN apk add --no-cache openssl && rm -f /etc/nginx/conf.d/default.conf
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker-entrypoint.d/10-nexora-certs.sh /docker-entrypoint.d/10-nexora-certs.sh
+RUN chmod +x /docker-entrypoint.d/10-nexora-certs.sh
 COPY --from=build /src/dist /usr/share/nginx/html
-EXPOSE 80
+ENV NEXORA_PUBLIC_HOST=localhost:8443
+# only substitute our variable, never nginx's own $variables
+ENV NGINX_ENVSUBST_FILTER=NEXORA_
+EXPOSE 80 443

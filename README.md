@@ -10,16 +10,22 @@ columns, a SharePoint-compatible permission model, a recycle bin, an audit log, 
 
 ## Run it
 
-### With Docker (PostgreSQL + S3 + Office editor)
+### With Docker (HTTPS, single sign-on, Office editor)
 
 ```sh
 cd deploy
-cp .env.example .env        # change the passwords
+cp .env.example .env              # change the passwords
+./scripts/make-dev-certs.sh       # or put your own tls.crt / tls.key in deploy/certs
 docker compose up -d --build
 ```
 
-Open http://localhost:8088 and sign in as `admin` with `NEXORA_BOOTSTRAP_ADMIN_PASSWORD`.
-With `NEXORA_DEMO_DATA=true` you also get `alice` / `alice-demo` (site member) and `bob` / `bob-demo` (visitor).
+Open https://localhost:8443 (trust `deploy/certs/ca.crt` first) and choose **Sign in with your organization
+account**. The bundled demo directory has `jdoe` / `Demo-Pass-1` (an administrator through the AD group
+*NEXORA Admins*), `msmith` / `Demo-Pass-2` and `atan` / `Demo-Pass-3`. The local break-glass account is `admin`
+with `NEXORA_BOOTSTRAP_ADMIN_PASSWORD`. With `NEXORA_DEMO_DATA=true` you also get the local users
+`alice` / `alice-demo` and `bob` / `bob-demo`.
+
+To connect real Active Directory, Kerberos and AD FS, see [docs/identity.md](docs/identity.md).
 
 The stack runs PostgreSQL, SeaweedFS (S3), Collabora Online (port 9980), the API and the web app.
 To co-author, open the same Word/Excel/PowerPoint file as two users (for example alice in one browser and
@@ -54,10 +60,8 @@ Every library and folder is reachable over WebDAV at `/dav` + its path, for exam
 - the library toolbar shows **Map network drive**, with the address and commands for Windows, macOS and Linux.
 
 **HTTPS is required for Windows clients.** Windows and Office send passwords to WebDAV servers only over
-HTTPS (`BasicAuthLevel=1`). Serve NEXORA over HTTPS (TLS at nginx or a load balancer). Only on a disposable
-test machine, an administrator may instead allow Basic over HTTP for the WebClient service
-(`HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters\BasicAuthLevel = 2`, then restart WebClient).
-Kerberos/NTLM single sign-on arrives with the identity gateway.
+HTTPS with a trusted certificate. The Docker stack serves HTTPS; on test machines trust `deploy/certs/ca.crt`.
+Directory users sign in to WebDAV with their AD user name and password.
 
 ### Tests
 
@@ -88,13 +92,15 @@ cd frontend && pnpm typecheck
 | Site templates: Team, Communication, Project and Intranet portal (libraries, lists, navigation, theme, home page) | ✅ |
 | Change the look: 8 themes, header layout/background, logo, top navigation, home page (welcome, quick links, news) | ✅ |
 | Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
+| HTTPS everywhere (nginx TLS for app, API, WebDAV, Keycloak and Collabora) | ✅ |
+| Single sign-on via Keycloak: OIDC + PKCE, AD/LDAP users and nested groups, Kerberos, AD FS (SAML) | ✅ |
+| Directory sync (AD groups usable in permissions before first sign-in), admin group mapping, Basic and bearer auth for directory users | ✅ |
 | OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` (API port) | ✅ |
 
 ## Not built yet (next slices, in plan order)
 
-1. **Identity gateway**: Keycloak with OIDC/SAML, AD/LDAP sync, Kerberos SSO.
-2. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
-3. **Office polish**: HTTPS by default in the Compose stack, WOPI proof-key validation, "New document" from templates.
+1. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
+3. **Office polish**: WOPI proof-key validation, "New document" from templates.
 4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
 5. Content types and a managed-metadata term store, saved list views, modern pages with web parts, workflows (v1).
 
@@ -110,8 +116,10 @@ backend/    Spring Boot modular monolith (Java 21)
   portal/     site templates, branding (theme, header, logo, navigation, home page)
   office/     WOPI host for the browser Office editor
   dav/        WebDAV for desktop Office and mapped drives
+  identity/sso/  OIDC login, directory provisioning and sync, Basic/bearer auth for directory users
+  tools/      Keycloak provisioner (one-shot: realm, clients, AD/LDAP, Kerberos, AD FS)
   api/        REST controllers and DTOs (/api/v1)
 frontend/   React + TypeScript + Fluent UI web app
-deploy/     Docker Compose
+deploy/     Docker Compose, certificates script, demo LDAP directory, AD FS registration script
 docs/       architecture notes
 ```
