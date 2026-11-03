@@ -86,6 +86,7 @@ public class SecurityConfig {
                         res.sendRedirect("/?loginError=" + java.net.URLEncoder.encode(code, java.nio.charset.StandardCharsets.UTF_8));
                     }))
                 .oauth2ResourceServer(o -> o
+                    .bearerTokenResolver(s.bearerResolver())
                     .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                     .jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
         }

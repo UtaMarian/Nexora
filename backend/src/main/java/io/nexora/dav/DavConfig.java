@@ -55,7 +55,11 @@ public class DavConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         sso.ifAvailable(s -> {
             try {
-                http.oauth2ResourceServer(o -> o.jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
+                // ignore bearer tokens from other issuers (desktop Office sends its Microsoft 365 token)
+                http.oauth2ResourceServer(o -> o
+                        .bearerTokenResolver(s.bearerResolver())
+                        .authenticationEntryPoint(challenge)
+                        .jwt(j -> j.decoder(s.jwtDecoder()).jwtAuthenticationConverter(s.jwtConverter())));
             } catch (Exception e) {
                 throw new IllegalStateException(e);
             }

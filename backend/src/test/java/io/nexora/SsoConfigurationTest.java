@@ -49,6 +49,30 @@ class SsoConfigurationTest extends ApiTestSupport {
     }
 
     @Test
+    void foreignBearerTokensFromOfficeAreIgnoredOnWebDav() throws Exception {
+        // what desktop Office sends: its own Microsoft 365 token (another issuer)
+        String header = "eyJhbGciOiJSUzI1NiJ9";
+        String payload = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"iss\":\"https://sts.windows.net/tenant/\",\"aud\":\"office\"}".getBytes());
+        String foreign = "Bearer " + header + "." + payload + ".c2ln";
+
+        var options = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .options("/dav/sites/").header("Authorization", foreign)).andReturn().getResponse();
+        assertThat(options.getStatus()).isNotEqualTo(401);
+
+        var propfind = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request("PROPFIND", java.net.URI.create("/dav/sites/")).header("Authorization", foreign))
+                .andReturn().getResponse();
+        assertThat(propfind.getStatus()).isEqualTo(401);
+        assertThat(propfind.getHeader("WWW-Authenticate")).startsWith("Basic");   // so Office asks for a password
+
+        var empty = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .request("PROPFIND", java.net.URI.create("/dav/sites/")).header("Authorization", "Bearer"))
+                .andReturn().getResponse();
+        assertThat(empty.getHeader("WWW-Authenticate")).startsWith("Basic");
+    }
+
+    @Test
     void invalidBearerTokensAreRejected() throws Exception {
         int status = mvc.perform(get("/api/v1/sites").header("Authorization", "Bearer not-a-jwt"))
                 .andReturn().getResponse().getStatus();

@@ -33,7 +33,7 @@ public class SsoConfig {
     /** Everything the security filter chains need to turn SSO on. */
     public record SsoSecurity(ClientRegistrationRepository registrations, NexoraOidcUserService userService,
                               IdpHintRequestResolver requestResolver, JwtDecoder jwtDecoder,
-                              JwtPrincipalConverter jwtConverter) {}
+                              JwtPrincipalConverter jwtConverter, IssuerScopedBearerTokenResolver bearerResolver) {}
 
     @Bean
     ClientRegistrationRepository clientRegistrationRepository(IdentityProperties props) {
@@ -72,7 +72,8 @@ public class SsoConfig {
                 new IdpHintRequestResolver(registrations,
                         c.identityProviders().stream().map(IdentityProperties.IdentityProvider::alias).collect(Collectors.toSet())),
                 decoder,
-                new JwtPrincipalConverter(provisioner, c));
+                new JwtPrincipalConverter(provisioner, c),
+                new IssuerScopedBearerTokenResolver(c.issuer()));
     }
 
     /**
