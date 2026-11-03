@@ -86,6 +86,28 @@ Rules:
 - WOPI locks are not used (`SupportsLocks=false`), because Collabora coordinates its own sessions. Locks
   become necessary for desktop Office over WebDAV.
 
+## WebDAV (desktop Office, mapped drives)
+
+A servlet at `/dav/*` serves RFC 4918 class 1+2 (PROPFIND, PROPPATCH, GET, PUT, DELETE, MKCOL, COPY, MOVE,
+LOCK, UNLOCK) over the same namespace as SharePoint: `/dav/sites/<site>/<library>/<folders>/<file>`. It calls
+the same services as the REST API, so permissions (including 404s for hidden items), versioning, check-out
+and auditing apply unchanged. Its security chain is stateless HTTP Basic with a `WWW-Authenticate` challenge,
+and OPTIONS is anonymous so clients can discover DAV support.
+
+- **Edit locks.** LOCK creates a row in `edit_lock` (exclusive, expiring, at most 24 h). The lock is
+  enforced on every write path, not only WebDAV: uploads, rename/move/delete and the browser editor. While
+  Word has a file open, others get it read-only, and the web app shows who has it open. Locks are distinct
+  from check-out: they expire on their own and don't hide changes.
+- **Empty placeholders.** Explorer creates a file empty and then uploads it. A single empty version made by
+  the same user in the last 5 minutes is replaced instead of kept, so history doesn't start with an empty 1.0.
+- **Ghost files.** Temp and lock files that desktop apps create (`~$*`, `~WR*.tmp`, `*.tmp`, `.~lock.*`,
+  `desktop.ini`, `Thumbs.db`, `._*`) live in a per-user in-memory store for 2 hours. They never become
+  documents.
+- **Office safe save.** On a mapped drive, Word saves by writing `~WRL1.tmp`, renaming `Doc.docx` to
+  `~WRD2.tmp`, renaming `~WRL1.tmp` to `Doc.docx`, and deleting `~WRD2.tmp`. The first rename only records an
+  *alias* (the real document stays put and is hidden from that user's listings). The second rename becomes a
+  new version of the same document, so history, permissions and links survive.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses
@@ -97,6 +119,8 @@ in the service layer only.
 - The Compose stack uses SeaweedFS for S3, because MinIO stopped publishing container images. Any
   S3-compatible store works. The PostgreSQL + S3 path has been smoke-tested, but the automated tests
   run on H2 and the filesystem store.
+- Windows/Office require HTTPS for Basic authentication to WebDAV; the reference Compose stack serves HTTP.
+- Ghost files and aliases are held in memory per backend node; with several nodes, WebDAV needs sticky sessions.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.
 - Search matches names and titles only, until the OpenSearch module lands.

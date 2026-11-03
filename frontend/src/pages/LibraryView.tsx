@@ -22,7 +22,9 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowUploadRegular,
+  DocumentEditRegular,
   FolderAddRegular,
+  HardDriveRegular,
   LockClosedRegular,
   PeopleRegular,
   SettingsRegular,
@@ -39,6 +41,7 @@ import { formatRelative, formatSize } from "../components/format";
 import { PromptDialog } from "../dialogs/PromptDialog";
 import { LibrarySettingsDialog } from "../dialogs/LibrarySettingsDialog";
 import { PermissionsDialog } from "../dialogs/PermissionsDialog";
+import { MapDriveDialog } from "../dialogs/MapDriveDialog";
 
 const useStyles = makeStyles({
   head: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" },
@@ -85,7 +88,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
     queryFn: () => api<ColumnDto[]>(`/api/v1/nodes/${library.id}/columns`),
   });
 
-  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | null>(null);
+  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | "drive" | null>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<{ name: string; fraction: number } | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
@@ -142,6 +145,9 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
               Manage access
             </ToolbarButton>
           )}
+          <ToolbarButton icon={<HardDriveRegular />} onClick={() => setDialog("drive")}>
+            Map network drive
+          </ToolbarButton>
           {isLibrary && can(container, "MANAGE_LISTS") && (
             <ToolbarButton icon={<SettingsRegular />} onClick={() => setDialog("settings")}>
               Library settings
@@ -242,6 +248,20 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
                             {n.name}
                           </Link>
                         )}
+                        {n.lockedBy && (
+                          <Tooltip
+                            relationship="label"
+                            content={
+                              n.lockedBy.id === me.id
+                                ? "Open in a desktop app by you"
+                                : `Open in a desktop app by ${n.lockedBy.displayName} — read-only for others until closed`
+                            }
+                          >
+                            <DocumentEditRegular
+                              style={{ marginLeft: 6, verticalAlign: "middle", color: tokens.colorPaletteBerryForeground1 }}
+                            />
+                          </Tooltip>
+                        )}
                         {n.checkedOutBy && (
                           <Tooltip
                             relationship="label"
@@ -292,6 +312,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
       )}
       {dialog === "settings" && <LibrarySettingsDialog library={container} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={container} onClose={() => setDialog(null)} />}
+      {dialog === "drive" && <MapDriveDialog node={container} onClose={() => setDialog(null)} />}
     </>
   );
 }

@@ -39,9 +39,12 @@ public class DocumentService {
     private final BlobStore store;
     private final BlobGarbageCollector gc;
     private final AuditService audit;
+    private final EditLockService editLocks;
 
     public DocumentService(NodeRepository nodes, FileVersionRepository versions, ContentService content,
-                           PermissionService permissions, BlobStore store, BlobGarbageCollector gc, AuditService audit) {
+                           PermissionService permissions, BlobStore store, BlobGarbageCollector gc, AuditService audit,
+                           EditLockService editLocks) {
+        this.editLocks = editLocks;
         this.nodes = nodes;
         this.versions = versions;
         this.content = content;
@@ -88,6 +91,9 @@ public class DocumentService {
 
     private Node saveContent(CurrentUser user, Node file, String declaredMime, Path data, String comment) {
         permissions.require(user, file, Right.EDIT_ITEMS);
+        if (editLocks.lockedByOther(user, file)) {
+            throw ApiException.locked("'" + file.getName() + "' is open for editing by someone else");
+        }
         String mime = MimeTypes.resolve(file.getName(), declaredMime);
         if (file.isCheckedOut()) {
             if (!file.getCheckedOutBy().equals(user.id())) {
@@ -245,6 +251,16 @@ public class DocumentService {
             history = List.of();
             major = 1;
             minor = 0;
+        } else if (isPlaceholder(history, user)) {
+            // Explorer and many WebDAV clients create a file empty, then upload its content right after:
+            // replace that placeholder instead of keeping an empty "1.0" in the history.
+            FileVersion placeholder = history.get(0);
+            released.add(placeholder.getStorageKey());
+            versions.delete(placeholder);
+            versions.flush();
+            major = placeholder.getMajor();
+            minor = placeholder.getMinor();
+            history = List.of();
         } else if (history.isEmpty()) {
             major = settings.minorVersionsEnabled() && !publishMajor ? 0 : 1;
             minor = settings.minorVersionsEnabled() && !publishMajor ? 1 : 0;
@@ -346,6 +362,14 @@ public class DocumentService {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not store upload", e);
         }
+    }
+
+    /** A single empty version created by the same user in the last few minutes. */
+    private static boolean isPlaceholder(List<FileVersion> history, CurrentUser user) {
+        if (history.size() != 1) return false;
+        FileVersion v = history.get(0);
+        return v.getSizeBytes() == 0 && v.getCreatedBy().equals(user.id())
+                && v.getCreatedAt().isAfter(Instant.now().minusSeconds(300));
     }
 
     private static String blankToNull(String s) {

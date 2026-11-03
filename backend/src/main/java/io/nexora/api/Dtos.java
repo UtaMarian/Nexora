@@ -45,6 +45,7 @@ public final class Dtos {
             UUID parentId, UUID siteId,
             Long sizeBytes, String mimeType, String version,
             PrincipalRef checkedOutBy, Instant checkedOutAt, boolean hasDraft,
+            PrincipalRef lockedBy, Instant lockExpiresAt,
             PrincipalRef createdBy, Instant createdAt, PrincipalRef modifiedBy, Instant modifiedAt,
             Map<String, Object> metadata, boolean inheritsPermissions,
             PermissionLevel myLevel, Set<Right> myRights) {}

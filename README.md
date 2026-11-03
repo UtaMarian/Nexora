@@ -44,6 +44,21 @@ The local profile signs in `admin` / `admin` and creates the demo users and the 
 For Office editing in this mode, also run the `collabora` service from `deploy/` (`docker compose up -d collabora`);
 it reaches the host backend through `host.docker.internal:8080`.
 
+### Desktop Office and mapped drives
+
+Every library and folder is reachable over WebDAV at `/dav` + its path, for example
+`http://localhost:8088/dav/sites/intranet/Shared Documents`. In the web app:
+
+- the file menu shows **Open in Word / Excel / PowerPoint**, which hands the file to the desktop app through
+  `ms-word:ofe|u|…` links;
+- the library toolbar shows **Map network drive**, with the address and commands for Windows, macOS and Linux.
+
+**HTTPS is required for Windows clients.** Windows and Office send passwords to WebDAV servers only over
+HTTPS (`BasicAuthLevel=1`). Serve NEXORA over HTTPS (TLS at nginx or a load balancer). Only on a disposable
+test machine, an administrator may instead allow Basic over HTTP for the WebClient service
+(`HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters\BasicAuthLevel = 2`, then restart WebClient).
+Kerberos/NTLM single sign-on arrives with the identity gateway.
+
 ### Tests
 
 ```sh
@@ -68,13 +83,15 @@ cd frontend && pnpm typecheck
 | Storage on S3-compatible object stores or a filesystem/NFS, content-addressed and de-duplicated | ✅ |
 | Browser sessions with CSRF protection; HTTP Basic for scripts | ✅ |
 | Browser editing of Word, Excel, PowerPoint and OpenDocument files with real-time co-authoring (WOPI + Collabora) | ✅ |
+| Desktop Office (Word, Excel, PowerPoint) open/save via WebDAV with locks; "Open in Word" links | ✅ |
+| Map a library as a network drive (Windows, macOS, Linux); Office "safe save" keeps version history | ✅ |
 | OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` (API port) | ✅ |
 
 ## Not built yet (next slices, in plan order)
 
 1. **Identity gateway**: Keycloak with OIDC/SAML, AD/LDAP sync, Kerberos SSO.
 2. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
-3. **Desktop Office**: WebDAV with Office lock semantics and `ms-word:` URIs (browser editing is done), WOPI proof-key validation, "New document" from templates.
+3. **Office polish**: HTTPS by default in the Compose stack, WOPI proof-key validation, "New document" from templates.
 4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
 5. Content types and a managed-metadata term store, then lists, pages, workflows (v1).
 
@@ -88,6 +105,7 @@ backend/    Spring Boot modular monolith (Java 21)
   storage/    BlobStore: filesystem and S3
   audit/      audit events
   office/     WOPI host for the browser Office editor
+  dav/        WebDAV for desktop Office and mapped drives
   api/        REST controllers and DTOs (/api/v1)
 frontend/   React + TypeScript + Fluent UI web app
 deploy/     Docker Compose

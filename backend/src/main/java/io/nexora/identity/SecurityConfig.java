@@ -38,6 +38,7 @@ public class SecurityConfig {
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS", "TRACE");
 
     @Bean
+    @org.springframework.core.annotation.Order(2)
     SecurityFilterChain api(HttpSecurity http) throws Exception {
         // WOPI calls come server-to-server from the Office editor and carry a signed access_token, not a cookie.
         RequestMatcher csrfRequired = request ->
@@ -47,6 +48,7 @@ public class SecurityConfig {
 
         http
             .authorizeHttpRequests(auth -> auth
+                .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf").permitAll()
                 .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
@@ -64,6 +66,17 @@ public class SecurityConfig {
                 .logoutSuccessHandler((req, res, auth) -> res.setStatus(HttpServletResponse.SC_NO_CONTENT)))
             .formLogin(form -> form.disable());
         return http.build();
+    }
+
+    /** Allows the WebDAV methods and '%' in paths (legal in SharePoint file names); everything else stays strict. */
+    @Bean
+    org.springframework.security.web.firewall.HttpFirewall httpFirewall() {
+        org.springframework.security.web.firewall.StrictHttpFirewall fw =
+                new org.springframework.security.web.firewall.StrictHttpFirewall();
+        fw.setAllowedHttpMethods(java.util.List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
+                "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK"));
+        fw.setAllowUrlEncodedPercent(true);
+        return fw;
     }
 
     @Bean

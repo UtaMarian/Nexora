@@ -23,6 +23,11 @@ spring:
       max-file-size: ${NEXORA_MAX_UPLOAD:4GB}
       max-request-size: ${NEXORA_MAX_UPLOAD:4GB}
       file-size-threshold: 1MB
+  mvc:
+    formcontent:
+      filter:
+        # Would consume form-typed PUT bodies before the WebDAV servlet sees them; the API has no form PUTs.
+        enabled: false
   jackson:
     default-property-inclusion: non_null
     serialization:

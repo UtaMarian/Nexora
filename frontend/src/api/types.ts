@@ -42,6 +42,8 @@ export interface NodeDto {
   checkedOutBy?: PrincipalRef;
   checkedOutAt?: string;
   hasDraft: boolean;
+  lockedBy?: PrincipalRef;
+  lockExpiresAt?: string;
   createdBy: PrincipalRef;
   createdAt: string;
   modifiedBy: PrincipalRef;

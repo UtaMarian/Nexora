@@ -36,12 +36,15 @@ public class ContentService {
     private final PermissionService permissions;
     private final AuditService audit;
     private final BlobGarbageCollector gc;
+    private final EditLockService editLocks;
     private final boolean selfServiceSites;
 
     public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                           PrincipalRepository principals, GroupMemberRepository members,
                           PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
+                          EditLockService editLocks,
                           @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
+        this.editLocks = editLocks;
         this.nodes = nodes;
         this.versions = versions;
         this.columns = columns;
@@ -65,8 +68,19 @@ public class ContentService {
     /** Resolves a SharePoint-style server-relative URL such as {@code /sites/hr/Shared Documents/a.docx}. */
     @Transactional(readOnly = true)
     public Node resolve(CurrentUser user, String path) {
-        String normalized = normalizePath(path);
-        Node node = nodes.findLiveByPath(normalized).orElseThrow(() -> ApiException.notFound("Item"));
+        // Try the path as given first (names may contain '%'), then URL-decoded (old SharePoint links).
+        String raw = cleanPath(path);
+        Node node = nodes.findLiveByPath(raw)
+                .or(() -> nodes.findLiveByPath(normalizePath(path)))
+                .orElseThrow(() -> ApiException.notFound("Item"));
+        permissions.require(user, node, Right.VIEW);
+        return node;
+    }
+
+    /** Like {@link #resolve} for a path that is already percent-decoded (e.g. a servlet path). */
+    @Transactional(readOnly = true)
+    public Node resolveDecoded(CurrentUser user, String decodedPath) {
+        Node node = nodes.findLiveByPath(decodedPath).orElseThrow(() -> ApiException.notFound("Item"));
         permissions.require(user, node, Right.VIEW);
         return node;
     }
@@ -485,6 +499,18 @@ public class ContentService {
         if (node.isCheckedOut() && !node.getCheckedOutBy().equals(user.id())) {
             throw ApiException.locked("'" + node.getName() + "' is checked out by someone else");
         }
+        if (node.getKind() == Node.Kind.FILE && editLocks.lockedByOther(user, node)) {
+            throw ApiException.locked("'" + node.getName() + "' is open for editing by someone else");
+        }
+    }
+
+    static String cleanPath(String path) {
+        if (path == null || path.isBlank()) throw ApiException.badRequest("invalid_path", "Path is required");
+        String p = path.strip().replace('\\', '/');
+        if (!p.startsWith("/")) p = "/" + p;
+        while (p.contains("//")) p = p.replace("//", "/");
+        if (p.length() > 1 && p.endsWith("/")) p = p.substring(0, p.length() - 1);
+        return p;
     }
 
     static String normalizePath(String path) {
@@ -492,7 +518,11 @@ public class ContentService {
         String p = path.strip().replace('\\', '/');
         int q = p.indexOf('?');
         if (q >= 0) p = p.substring(0, q);
-        p = java.net.URLDecoder.decode(p.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            p = java.net.URLDecoder.decode(p.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException notEncoded) {
+            // a literal '%' in a name: keep the path as is
+        }
         if (!p.startsWith("/")) p = "/" + p;
         while (p.contains("//")) p = p.replace("//", "/");
         if (p.length() > 1 && p.endsWith("/")) p = p.substring(0, p.length() - 1);

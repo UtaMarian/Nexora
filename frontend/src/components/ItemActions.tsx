@@ -18,6 +18,7 @@ import {
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DeleteRegular,
+  DesktopRegular,
   DismissCircleRegular,
   DocumentEditRegular,
   EditRegular,
@@ -32,7 +33,7 @@ import {
 import { api, ApiError, contentUrl, routeFor } from "../api/client";
 import type { NodeDto } from "../api/types";
 import { can, useMe } from "./me";
-import { officeRoute, useOffice } from "./office";
+import { desktopLink, officeRoute, useOffice } from "./office";
 import { PromptDialog } from "../dialogs/PromptDialog";
 import { PropertiesDialog } from "../dialogs/PropertiesDialog";
 import { VersionHistoryDialog } from "../dialogs/VersionHistoryDialog";
@@ -63,6 +64,8 @@ export function ItemActions(props: {
   const mine = node.checkedOutBy?.id === me.id;
   const lockedByOther = !!node.checkedOutBy && !mine;
   const canEdit = can(node, "EDIT_ITEMS") && !lockedByOther;
+  const openElsewhere = !!node.lockedBy && node.lockedBy.id !== me.id;
+  const desktop = isFile ? desktopLink(node.name, node.path, canEdit && !openElsewhere) : null;
 
   const notify = (title: string, intent: "success" | "error" = "success") =>
     dispatchToast(
@@ -114,6 +117,11 @@ export function ItemActions(props: {
                 {office.canOpen(node.name) && (
                   <MenuItem icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(node.id))}>
                     {office.canEdit(node.name) && canEdit ? "Open in browser" : "View in browser"}
+                  </MenuItem>
+                )}
+                {desktop && (
+                  <MenuItem icon={<DesktopRegular />} onClick={() => (window.location.href = desktop.href)}>
+                    Open in {desktop.app}
                   </MenuItem>
                 )}
                 <MenuItem icon={<OpenRegular />} onClick={() => window.open(contentUrl(node.id), "_blank", "noopener")}>

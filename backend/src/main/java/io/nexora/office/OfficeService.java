@@ -35,10 +35,13 @@ public class OfficeService {
     private final FileVersionRepository versions;
     private final PrincipalRepository principals;
     private final AuditService audit;
+    private final EditLockService editLocks;
 
     public OfficeService(OfficeProperties props, WopiDiscovery discovery, WopiTokenService tokens,
                          DocumentService documents, ContentService content, PermissionService permissions,
-                         FileVersionRepository versions, PrincipalRepository principals, AuditService audit) {
+                         FileVersionRepository versions, PrincipalRepository principals, AuditService audit,
+                         EditLockService editLocks) {
+        this.editLocks = editLocks;
         this.props = props;
         this.discovery = discovery;
         this.tokens = tokens;
@@ -78,6 +81,7 @@ public class OfficeService {
     /** May this user save through the editor right now? */
     public boolean canWrite(CurrentUser user, Node file) {
         if (!permissions.has(user, file, Right.EDIT_ITEMS)) return false;
+        if (editLocks.lockedByOther(user, file)) return false;   // open in desktop Office by someone else
         if (file.isCheckedOut()) return file.getCheckedOutBy().equals(user.id());
         return !LibrarySettings.of(content.libraryOf(file)).requireCheckout();
     }

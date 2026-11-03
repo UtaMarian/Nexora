@@ -4,6 +4,8 @@ import io.nexora.acl.PermissionLevel;
 import io.nexora.acl.PermissionService;
 import io.nexora.api.Dtos.NodeDto;
 import io.nexora.api.Dtos.PrincipalRef;
+import io.nexora.content.EditLock;
+import io.nexora.content.EditLockService;
 import io.nexora.content.FileVersion;
 import io.nexora.content.FileVersionRepository;
 import io.nexora.content.Node;
@@ -21,8 +23,11 @@ public class NodeMapper {
     private final IdentityService identity;
     private final FileVersionRepository versions;
     private final PermissionService permissions;
+    private final EditLockService editLocks;
 
-    public NodeMapper(IdentityService identity, FileVersionRepository versions, PermissionService permissions) {
+    public NodeMapper(IdentityService identity, FileVersionRepository versions, PermissionService permissions,
+                      EditLockService editLocks) {
+        this.editLocks = editLocks;
         this.identity = identity;
         this.versions = versions;
         this.permissions = permissions;
@@ -43,6 +48,9 @@ public class NodeMapper {
             if (n.getCheckedOutBy() != null) principalIds.add(n.getCheckedOutBy());
             if (n.getCurrentVersionId() != null) versionIds.add(n.getCurrentVersionId());
         }
+        Map<UUID, EditLock> locks = editLocks.activeFor(
+                nodes.stream().filter(n -> n.getKind() == Node.Kind.FILE).map(Node::getId).toList());
+        locks.values().forEach(l -> principalIds.add(l.getOwnerId()));
         Map<UUID, Principal> people = identity.byIds(principalIds);
         Map<UUID, String> labels = new HashMap<>();
         versions.findAllById(versionIds).forEach(v -> labels.put(v.getId(), v.label()));
@@ -60,6 +68,8 @@ public class NodeMapper {
                     n.getCurrentVersionId() == null ? null : labels.get(n.getCurrentVersionId()),
                     PrincipalRef.of(people.get(n.getCheckedOutBy())), n.getCheckedOutAt(),
                     mine && n.getWorkingStorageKey() != null,
+                    locks.containsKey(n.getId()) ? PrincipalRef.of(people.get(locks.get(n.getId()).getOwnerId())) : null,
+                    locks.containsKey(n.getId()) ? locks.get(n.getId()).getExpiresAt() : null,
                     PrincipalRef.of(people.get(n.getCreatedBy())), n.getCreatedAt(),
                     PrincipalRef.of(people.get(n.getModifiedBy())), n.getModifiedAt(),
                     n.getMetadata(), n.isInheritsPermissions(),
