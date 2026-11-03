@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:nexora-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+nexora:
+  storage:
+    type: filesystem
+    filesystem:
+      root: ${java.io.tmpdir}/nexora-test-blobs
+  bootstrap:
+    admin-login: admin
+    admin-password: admin-test-pw
+    demo-data: false
+logging:
+  level:
+    nexora.audit: WARN

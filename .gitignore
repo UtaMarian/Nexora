@@ -1,0 +1,19 @@
+# Build output
+target/
+dist/
+node_modules/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Local runtime data
+data/
+backend/data/
+.env
+
+# OS
+.DS_Store
+Thumbs.db

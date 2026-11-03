@@ -1,0 +1,501 @@
+package io.nexora.content;
+
+import io.nexora.acl.PermissionLevel;
+import io.nexora.acl.PermissionService;
+import io.nexora.acl.Right;
+import io.nexora.audit.AuditService;
+import io.nexora.common.ApiException;
+import io.nexora.identity.CurrentUser;
+import io.nexora.identity.GroupMember;
+import io.nexora.identity.GroupMemberRepository;
+import io.nexora.identity.Principal;
+import io.nexora.identity.PrincipalRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.*;
+
+/** Sites, libraries, folders, rename/move/delete, recycle bin, metadata and columns. */
+@Service
+@Transactional
+public class ContentService {
+    public static final String DEFAULT_LIBRARY = "Shared Documents";
+
+    private final NodeRepository nodes;
+    private final FileVersionRepository versions;
+    private final ColumnDefRepository columns;
+    private final PrincipalRepository principals;
+    private final GroupMemberRepository members;
+    private final PermissionService permissions;
+    private final AuditService audit;
+    private final BlobGarbageCollector gc;
+    private final boolean selfServiceSites;
+
+    public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
+                          PrincipalRepository principals, GroupMemberRepository members,
+                          PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
+                          @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
+        this.nodes = nodes;
+        this.versions = versions;
+        this.columns = columns;
+        this.principals = principals;
+        this.members = members;
+        this.permissions = permissions;
+        this.audit = audit;
+        this.gc = gc;
+        this.selfServiceSites = selfServiceSites;
+    }
+
+    // ---- lookup ----------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public Node get(CurrentUser user, UUID id) {
+        Node node = nodes.findLive(id).orElseThrow(() -> ApiException.notFound("Item"));
+        permissions.require(user, node, Right.VIEW);
+        return node;
+    }
+
+    /** Resolves a SharePoint-style server-relative URL such as {@code /sites/hr/Shared Documents/a.docx}. */
+    @Transactional(readOnly = true)
+    public Node resolve(CurrentUser user, String path) {
+        String normalized = normalizePath(path);
+        Node node = nodes.findLiveByPath(normalized).orElseThrow(() -> ApiException.notFound("Item"));
+        permissions.require(user, node, Right.VIEW);
+        return node;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> children(CurrentUser user, UUID parentId) {
+        Node parent = get(user, parentId);
+        if (!parent.getKind().isContainer()) throw ApiException.badRequest("not_a_container", "Files have no children");
+        return permissions.filterVisible(user, nodes.findLiveChildren(parent.getId()));
+    }
+
+    /** The chain from the site down to (and including) the node, for breadcrumbs. */
+    @Transactional(readOnly = true)
+    public List<Node> ancestry(Node node) {
+        LinkedList<Node> chain = new LinkedList<>();
+        Node current = node;
+        while (current != null) {
+            chain.addFirst(current);
+            current = current.getParentId() == null ? null : nodes.findById(current.getParentId()).orElse(null);
+        }
+        return chain;
+    }
+
+    @Transactional(readOnly = true)
+    public Node libraryOf(Node node) {
+        if (node.getKind() == Node.Kind.LIBRARY) return node;
+        if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("not_in_library", "Sites are not in a library");
+        String[] seg = node.getPath().split("/");   // "", "sites", site, library, ...
+        String libPath = "/" + seg[1] + "/" + seg[2] + "/" + seg[3];
+        return nodes.findLiveByPath(libPath)
+                .orElseThrow(() -> new IllegalStateException("No library for " + node.getPath()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> visibleSites(CurrentUser user) {
+        return permissions.filterVisible(user, nodes.findLiveSites());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> search(CurrentUser user, String q, int limit) {
+        if (q == null || q.isBlank()) return List.of();
+        List<Node> candidates = nodes.searchByName(q.strip(), PageRequest.of(0, Math.max(limit * 4, 100)));
+        List<Node> visible = permissions.filterVisible(user, candidates);
+        return visible.subList(0, Math.min(limit, visible.size()));
+    }
+
+    // ---- sites -----------------------------------------------------------------------------
+
+    /**
+     * Creates a team site with SharePoint's standard groups (Owners: Full Control, Members: Edit,
+     * Visitors: Read), adds the creator to Owners, and provisions the default document library.
+     */
+    public Node createSite(CurrentUser user, String slug, String title, String description) {
+        if (!selfServiceSites && !user.admin()) {
+            throw ApiException.forbidden("Only administrators can create sites");
+        }
+        String name = Names.siteSlug(slug);
+        if (nodes.existsSiteName(name)) {
+            throw ApiException.conflict("site_exists", "A site with the URL /sites/" + name + " already exists");
+        }
+        Node site = Node.create(Node.Kind.SITE, null, name, user.id());
+        site.setTitle(title == null || title.isBlank() ? name : title.strip());
+        site.setDescription(description);
+        nodes.save(site);
+
+        String t = site.getTitle();
+        Principal owners = principals.save(Principal.group(name + "-owners", t + " Owners", site.getId()));
+        Principal membersGroup = principals.save(Principal.group(name + "-members", t + " Members", site.getId()));
+        Principal visitors = principals.save(Principal.group(name + "-visitors", t + " Visitors", site.getId()));
+        members.save(new GroupMember(owners.getId(), user.id()));
+        permissions.grant(site, owners.getId(), PermissionLevel.FULL_CONTROL);
+        permissions.grant(site, membersGroup.getId(), PermissionLevel.EDIT);
+        permissions.grant(site, visitors.getId(), PermissionLevel.READ);
+
+        Node library = Node.create(Node.Kind.LIBRARY, site, DEFAULT_LIBRARY, user.id());
+        library.setTitle("Documents");
+        LibrarySettings.DEFAULT.applyTo(library);
+        nodes.save(library);
+
+        audit.record(user, "SITE_CREATE", site, Map.of("title", site.getTitle()));
+        return site;
+    }
+
+    public Node updateSite(CurrentUser user, UUID siteId, String title, String description) {
+        Node site = get(user, siteId);
+        if (site.getKind() != Node.Kind.SITE) throw ApiException.badRequest("not_a_site", "Not a site");
+        permissions.require(user, site, Right.MANAGE_WEB);
+        if (title != null && !title.isBlank()) site.setTitle(title.strip());
+        if (description != null) site.setDescription(description);
+        site.touch(user.id());
+        audit.record(user, "SITE_UPDATE", site);
+        return site;
+    }
+
+    // ---- containers ------------------------------------------------------------------------
+
+    public Node createLibrary(CurrentUser user, UUID siteId, String rawName, String title, String description) {
+        Node site = get(user, siteId);
+        if (site.getKind() != Node.Kind.SITE) throw ApiException.badRequest("not_a_site", "Libraries live directly in a site");
+        permissions.require(user, site, Right.MANAGE_LISTS);
+        String name = Names.item(rawName);
+        assertNoSibling(site, name);
+        Node lib = Node.create(Node.Kind.LIBRARY, site, name, user.id());
+        lib.setTitle(title == null || title.isBlank() ? name : title.strip());
+        lib.setDescription(description);
+        LibrarySettings.DEFAULT.applyTo(lib);
+        nodes.save(lib);
+        audit.record(user, "LIBRARY_CREATE", lib);
+        return lib;
+    }
+
+    public Node createFolder(CurrentUser user, UUID parentId, String rawName) {
+        Node parent = get(user, parentId);
+        if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER) {
+            throw ApiException.badRequest("invalid_parent", "Folders can only be created in a library or folder");
+        }
+        permissions.require(user, parent, Right.ADD_ITEMS);
+        String name = Names.item(rawName);
+        assertNoSibling(parent, name);
+        Node folder = Node.create(Node.Kind.FOLDER, parent, name, user.id());
+        nodes.save(folder);
+        audit.record(user, "FOLDER_CREATE", folder);
+        return folder;
+    }
+
+    public LibrarySettings updateLibrarySettings(CurrentUser user, UUID libraryId, LibrarySettings settings) {
+        Node lib = get(user, libraryId);
+        if (lib.getKind() != Node.Kind.LIBRARY) throw ApiException.badRequest("not_a_library", "Not a library");
+        permissions.require(user, lib, Right.MANAGE_LISTS);
+        if (settings.maxVersions() != null && settings.maxVersions() < 1) {
+            throw ApiException.badRequest("invalid_settings", "maxVersions must be at least 1");
+        }
+        settings.applyTo(lib);
+        lib.touch(user.id());
+        audit.record(user, "LIBRARY_SETTINGS_UPDATE", lib, Map.of(
+                "versioningEnabled", settings.versioningEnabled(),
+                "minorVersionsEnabled", settings.minorVersionsEnabled(),
+                "requireCheckout", settings.requireCheckout()));
+        return settings;
+    }
+
+    // ---- rename / move / metadata ------------------------------------------------------------
+
+    /** Updates name, title, description and/or metadata. Any argument may be null to leave it unchanged. */
+    public Node update(CurrentUser user, UUID id, String newName, String title, String description,
+                       Map<String, Object> metadataPatch) {
+        Node node = get(user, id);
+        Right needed = switch (node.getKind()) {
+            case SITE -> Right.MANAGE_WEB;
+            case LIBRARY -> Right.MANAGE_LISTS;
+            default -> Right.EDIT_ITEMS;
+        };
+        permissions.require(user, node, needed);
+        assertNotLockedByOthers(user, node);
+
+        if (newName != null && !newName.equals(node.getName())) {
+            if (node.getKind() == Node.Kind.SITE) {
+                throw ApiException.badRequest("site_url_immutable", "A site's URL cannot be changed; change its title instead");
+            }
+            String name = Names.item(newName);
+            Node parent = nodes.findById(node.getParentId()).orElseThrow();
+            if (!name.equalsIgnoreCase(node.getName())) assertNoSibling(parent, name);
+            String oldPath = node.getPath();
+            node.setName(name);
+            relocate(node, parent);
+            audit.record(user, "RENAME", node, Map.of("from", oldPath));
+        }
+        if (title != null) node.setTitle(title.isBlank() ? null : title.strip());
+        if (description != null) node.setDescription(description);
+        if (metadataPatch != null) {
+            if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER) {
+                throw ApiException.badRequest("no_metadata", "Only files and folders carry column values");
+            }
+            Map<String, Object> merged = validateMetadata(libraryOf(node), node.getMetadata(), metadataPatch);
+            node.setMetadata(merged);
+            audit.record(user, "METADATA_UPDATE", node, Map.of("fields", new ArrayList<>(metadataPatch.keySet())));
+        }
+        node.touch(user.id());
+        return node;
+    }
+
+    public Node move(CurrentUser user, UUID id, UUID targetParentId) {
+        Node node = get(user, id);
+        if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER) {
+            throw ApiException.badRequest("not_movable", "Only files and folders can be moved");
+        }
+        Node target = get(user, targetParentId);
+        if (target.getKind() != Node.Kind.LIBRARY && target.getKind() != Node.Kind.FOLDER) {
+            throw ApiException.badRequest("invalid_target", "Items can only be moved into a library or folder");
+        }
+        if (target.getId().equals(node.getParentId())) return node;
+        if (target.getId().equals(node.getId()) || target.getPath().toLowerCase(Locale.ROOT)
+                .startsWith(node.getPath().toLowerCase(Locale.ROOT) + "/")) {
+            throw ApiException.badRequest("invalid_target", "A folder cannot be moved into itself");
+        }
+        permissions.require(user, node, Right.DELETE_ITEMS);
+        permissions.require(user, target, Right.ADD_ITEMS);
+        assertNotLockedByOthers(user, node);
+        assertNoSibling(target, node.getName());
+
+        String oldPath = node.getPath();
+        relocate(node, target);
+        node.touch(user.id());
+        audit.record(user, "MOVE", node, Map.of("from", oldPath));
+        return node;
+    }
+
+    /** Re-parents {@code node} under {@code parent} (using its current name) and rewrites descendant paths. */
+    private void relocate(Node node, Node parent) {
+        String oldPath = node.getPath();
+        String newPath = parent.getPath() + "/" + node.getName();
+        node.setParentId(parent.getId());
+        node.setSiteId(parent.getSiteId());
+        node.setPath(newPath);
+        nodes.saveAndFlush(node);
+        if (node.getKind().isContainer()) {
+            nodes.rewriteDescendantPaths(NodeRepository.likePrefix(oldPath), oldPath.length(), newPath, parent.getSiteId());
+        }
+    }
+
+    // ---- delete & recycle bin ----------------------------------------------------------------
+
+    public void delete(CurrentUser user, UUID id) {
+        Node node = get(user, id);
+        switch (node.getKind()) {
+            case SITE -> {
+                if (!user.admin()) throw ApiException.forbidden("Only administrators can delete sites");
+            }
+            case LIBRARY -> permissions.require(user, node, Right.MANAGE_LISTS);
+            default -> permissions.require(user, node, Right.DELETE_ITEMS);
+        }
+        assertNotLockedByOthers(user, node);
+        if (node.getKind().isContainer()
+                && nodes.countDescendantsCheckedOutByOthers(NodeRepository.likePrefix(node.getPath()), user.id()) > 0) {
+            throw ApiException.locked("This folder contains files checked out by other people");
+        }
+        nodes.softDeleteSubtree(node.getId(), NodeRepository.likePrefix(node.getPath()), Instant.now(), user.id());
+        audit.record(user, "DELETE", node);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> recycleBin(CurrentUser user, UUID siteId) {
+        return nodes.findRecycleBin(siteId).stream()
+                .filter(n -> canManageDeleted(user, n))
+                .toList();
+    }
+
+    public Node restore(CurrentUser user, UUID id) {
+        Node root = deletedRoot(user, id);
+        if (root.getParentId() != null) {
+            Node parent = nodes.findLive(root.getParentId()).orElseThrow(() -> ApiException.conflict(
+                    "parent_deleted", "The original location no longer exists; restore the parent folder first"));
+            if (nodes.existsLiveSibling(parent.getId(), root.getName())) {
+                throw ApiException.conflict("name_conflict",
+                        "An item named '" + root.getName() + "' already exists in the original location");
+            }
+        }
+        nodes.restoreSubtree(root.getId());
+        audit.record(user, "RESTORE", root);
+        return nodes.findById(root.getId()).orElseThrow();
+    }
+
+    /** Permanently deletes a recycle-bin item, its descendants, all versions and unreferenced blobs. */
+    public void purge(CurrentUser user, UUID id) {
+        Node root = deletedRoot(user, id);
+        List<Node> subtree = new ArrayList<>(nodes.findByDeletedRootId(root.getId()));
+        // children before parents so the parent_id foreign key is never violated
+        subtree.sort(Comparator.comparingInt((Node n) -> n.getPath().length()).reversed());
+        List<UUID> ids = subtree.stream().map(Node::getId).toList();
+        List<FileVersion> allVersions = versions.findByNodeIdIn(ids);
+        Set<String> keys = new HashSet<>();
+        allVersions.forEach(v -> keys.add(v.getStorageKey()));
+        subtree.forEach(n -> keys.add(n.getWorkingStorageKey()));
+        versions.deleteAll(allVersions);
+        for (Node n : subtree) {
+            columns.deleteAll(columns.findByLibraryIdOrderByPosition(n.getId()));
+            nodes.delete(n);
+            nodes.flush();
+        }
+        gc.deleteIfOrphanedAfterCommit(keys);
+        audit.record(user, "PURGE", root, Map.of("items", subtree.size()));
+    }
+
+    private Node deletedRoot(CurrentUser user, UUID id) {
+        Node root = nodes.findById(id)
+                .filter(n -> n.isDeleted() && id.equals(n.getDeletedRootId()))
+                .orElseThrow(() -> ApiException.notFound("Recycle bin item"));
+        if (!canManageDeleted(user, root)) throw ApiException.notFound("Recycle bin item");
+        return root;
+    }
+
+    private boolean canManageDeleted(CurrentUser user, Node deleted) {
+        if (user.admin()) return true;
+        if (deleted.getKind() == Node.Kind.SITE) return false;
+        if (user.id().equals(deleted.getDeletedBy())) return true;
+        return nodes.findById(deleted.getSiteId())
+                .map(site -> permissions.has(user, site, Right.MANAGE_WEB))
+                .orElse(false);
+    }
+
+    // ---- columns -----------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public List<ColumnDef> columns(CurrentUser user, UUID libraryId) {
+        Node lib = get(user, libraryId);
+        return columns.findByLibraryIdOrderByPosition(libraryOf(lib).getId());
+    }
+
+    public ColumnDef addColumn(CurrentUser user, UUID libraryId, String displayName, ColumnDef.Type type,
+                               boolean required, List<String> choices) {
+        Node lib = get(user, libraryId);
+        if (lib.getKind() != Node.Kind.LIBRARY) throw ApiException.badRequest("not_a_library", "Not a library");
+        permissions.require(user, lib, Right.MANAGE_LISTS);
+        if (displayName == null || displayName.isBlank()) {
+            throw ApiException.badRequest("invalid_column", "Column name is required");
+        }
+        if (type == ColumnDef.Type.CHOICE && (choices == null || choices.isEmpty())) {
+            throw ApiException.badRequest("invalid_column", "A choice column needs at least one choice");
+        }
+        List<ColumnDef> existing = columns.findByLibraryIdOrderByPosition(lib.getId());
+        String base = Names.columnInternalName(displayName);
+        String internal = base;
+        Set<String> taken = new HashSet<>(Set.of("Name", "Title", "Created", "Modified", "Author", "Editor", "Version"));
+        existing.forEach(c -> taken.add(c.getInternalName()));
+        for (int i = 1; taken.contains(internal); i++) internal = base + i;
+        ColumnDef col = columns.save(new ColumnDef(lib.getId(), internal, displayName.strip(), type, required,
+                choices, existing.size()));
+        audit.record(user, "COLUMN_ADD", lib, Map.of("column", internal, "type", type.name()));
+        return col;
+    }
+
+    public void deleteColumn(CurrentUser user, UUID libraryId, UUID columnId) {
+        Node lib = get(user, libraryId);
+        permissions.require(user, lib, Right.MANAGE_LISTS);
+        ColumnDef col = columns.findById(columnId)
+                .filter(c -> c.getLibraryId().equals(lib.getId()))
+                .orElseThrow(() -> ApiException.notFound("Column"));
+        columns.delete(col);
+        audit.record(user, "COLUMN_DELETE", lib, Map.of("column", col.getInternalName()));
+    }
+
+    /** Validates a metadata patch against the library's columns; a null value clears a field. */
+    Map<String, Object> validateMetadata(Node library, Map<String, Object> current, Map<String, Object> patch) {
+        Map<String, ColumnDef> defs = new HashMap<>();
+        columns.findByLibraryIdOrderByPosition(library.getId()).forEach(c -> defs.put(c.getInternalName(), c));
+        Map<String, Object> merged = new HashMap<>(current);
+        for (Map.Entry<String, Object> e : patch.entrySet()) {
+            ColumnDef def = defs.get(e.getKey());
+            if (def == null) throw ApiException.badRequest("unknown_column", "Unknown column '" + e.getKey() + "'");
+            Object value = e.getValue();
+            if (value == null || (value instanceof String s && s.isBlank())) {
+                merged.remove(def.getInternalName());
+            } else {
+                merged.put(def.getInternalName(), coerce(def, value));
+            }
+        }
+        for (ColumnDef def : defs.values()) {
+            if (def.isRequired() && !merged.containsKey(def.getInternalName())) {
+                throw ApiException.badRequest("required_column", "'" + def.getDisplayName() + "' is required");
+            }
+        }
+        return merged;
+    }
+
+    private static Object coerce(ColumnDef def, Object value) {
+        String label = "'" + def.getDisplayName() + "'";
+        return switch (def.getType()) {
+            case TEXT -> {
+                String s = value.toString();
+                if (s.length() > 255) throw ApiException.badRequest("invalid_value", label + " is limited to 255 characters");
+                yield s;
+            }
+            case NOTE -> value.toString();
+            case NUMBER -> {
+                try {
+                    yield value instanceof Number n ? n : new BigDecimal(value.toString().strip());
+                } catch (NumberFormatException ex) {
+                    throw ApiException.badRequest("invalid_value", label + " must be a number");
+                }
+            }
+            case BOOLEAN -> {
+                if (value instanceof Boolean b) yield b;
+                String s = value.toString().strip().toLowerCase(Locale.ROOT);
+                if (s.equals("true") || s.equals("yes")) yield true;
+                if (s.equals("false") || s.equals("no")) yield false;
+                throw ApiException.badRequest("invalid_value", label + " must be yes or no");
+            }
+            case DATE -> {
+                String s = value.toString().strip();
+                try {
+                    if (s.length() == 10) LocalDate.parse(s); else OffsetDateTime.parse(s);
+                    yield s;
+                } catch (DateTimeParseException ex) {
+                    throw ApiException.badRequest("invalid_value", label + " must be a date (YYYY-MM-DD)");
+                }
+            }
+            case CHOICE -> {
+                String s = value.toString();
+                if (!def.getChoices().contains(s)) {
+                    throw ApiException.badRequest("invalid_value", label + " must be one of " + def.getChoices());
+                }
+                yield s;
+            }
+        };
+    }
+
+    // ---- helpers -----------------------------------------------------------------------------
+
+    void assertNoSibling(Node parent, String name) {
+        if (nodes.existsLiveSibling(parent.getId(), name)) {
+            throw ApiException.conflict("name_conflict", "An item named '" + name + "' already exists here");
+        }
+    }
+
+    void assertNotLockedByOthers(CurrentUser user, Node node) {
+        if (node.isCheckedOut() && !node.getCheckedOutBy().equals(user.id())) {
+            throw ApiException.locked("'" + node.getName() + "' is checked out by someone else");
+        }
+    }
+
+    static String normalizePath(String path) {
+        if (path == null || path.isBlank()) throw ApiException.badRequest("invalid_path", "Path is required");
+        String p = path.strip().replace('\\', '/');
+        int q = p.indexOf('?');
+        if (q >= 0) p = p.substring(0, q);
+        p = java.net.URLDecoder.decode(p.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        if (!p.startsWith("/")) p = "/" + p;
+        while (p.contains("//")) p = p.replace("//", "/");
+        if (p.length() > 1 && p.endsWith("/")) p = p.substring(0, p.length() - 1);
+        return p;
+    }
+}
