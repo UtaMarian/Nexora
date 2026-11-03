@@ -61,6 +61,8 @@ public class DocumentService {
         if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER) {
             throw ApiException.badRequest("invalid_parent", "Files can only be uploaded to a library or folder");
         }
+        // Check rights before looking at names, so people without write access learn nothing about siblings.
+        permissions.require(user, parent, Right.ADD_ITEMS);
         String name = Names.item(fileName);
         Optional<Node> existing = nodes.findLiveByPath(parent.getPath() + "/" + name);
         if (existing.isPresent()) {
@@ -71,7 +73,6 @@ public class DocumentService {
             return saveContent(user, file, declaredMime, data, comment);
         }
 
-        permissions.require(user, parent, Right.ADD_ITEMS);
         StoredBlob blob = put(data);
         Node file = Node.create(Node.Kind.FILE, parent, name, user.id());
         nodes.saveAndFlush(file);

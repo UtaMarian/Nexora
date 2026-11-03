@@ -1,0 +1,86 @@
+# NEXORA
+
+A self-hosted, Linux/container-native document and intranet platform: a replacement for SharePoint Server
+for organizations that must stay on-premises. See the
+[development plan](SharePoint%20Server%20Replacement%20–%20Development%20Plan.md) for the product strategy.
+
+This repository holds the **MVP core**: sites, document libraries, versioning, check-out/in, metadata
+columns, a SharePoint-compatible permission model, a recycle bin, an audit log, a REST API and a web app.
+
+## Run it
+
+### With Docker (PostgreSQL + MinIO)
+
+```sh
+cd deploy
+cp .env.example .env        # change the passwords
+docker compose up -d --build
+```
+
+Open http://localhost:8088 and sign in as `admin` with `NEXORA_BOOTSTRAP_ADMIN_PASSWORD`.
+With `NEXORA_DEMO_DATA=true` you also get `alice` / `alice-demo` (site member) and `bob` / `bob-demo` (visitor).
+
+### Without Docker (development)
+
+Needs Java 21+ and Node 22+ with pnpm.
+
+```sh
+# API on :8080, embedded H2 database and blobs in backend/data/
+cd backend
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+
+# Web app on :5173 (proxies /api to :8080)
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The local profile signs in `admin` / `admin` and creates the demo users and the `/sites/intranet` site.
+
+### Tests
+
+```sh
+cd backend && ./mvnw test        # API integration tests (H2 + temp blob store)
+cd frontend && pnpm typecheck
+```
+
+## What works
+
+| Area | Status |
+| --- | --- |
+| Team sites with Owners / Members / Visitors groups and a default Documents library | ✅ |
+| Libraries, folders, upload (multi-file, drag and drop), download, rename, move | ✅ |
+| Major versions, minor (draft) versions + publish, version history, restore, delete, version limits | ✅ |
+| Check-out with a private draft, check-in, discard; "require check-out" libraries | ✅ |
+| Custom columns (text, note, number, date, yes/no, choice) with validation | ✅ |
+| Permission levels Read / Contribute / Edit / Full Control, inheritance, break/reset, nested groups | ✅ |
+| Security-trimmed listings and search; inaccessible items return 404 | ✅ |
+| Recycle bin with restore and permanent delete (blob garbage collection) | ✅ |
+| Audit log of reads, writes and permission changes; mirrored to the `nexora.audit` logger for SIEM | ✅ |
+| SharePoint-style URLs (`/sites/hr/Shared Documents/a.docx`) in the API (`/api/v1/resolve`) and the browser | ✅ |
+| Storage on S3-compatible object stores or a filesystem/NFS, content-addressed and de-duplicated | ✅ |
+| Browser sessions with CSRF protection; HTTP Basic for scripts | ✅ |
+| OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` (API port) | ✅ |
+
+## Not built yet (next slices, in plan order)
+
+1. **Identity gateway**: Keycloak with OIDC/SAML, AD/LDAP sync, Kerberos SSO.
+2. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
+3. **Office integration**: WOPI host for Collabora/OnlyOffice, plus WebDAV with Office lock semantics and `ms-word:` URIs.
+4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
+5. Content types and a managed-metadata term store, then lists, pages, workflows (v1).
+
+## Layout
+
+```
+backend/    Spring Boot modular monolith (Java 21)
+  identity/   users, groups, authentication, bootstrap
+  content/    content tree, versions, columns, library settings
+  acl/        permission levels and the single permission-check service
+  storage/    BlobStore: filesystem and S3
+  audit/      audit events
+  api/        REST controllers and DTOs (/api/v1)
+frontend/   React + TypeScript + Fluent UI web app
+deploy/     Docker Compose
+docs/       architecture notes
+```

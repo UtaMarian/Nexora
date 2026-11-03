@@ -35,6 +35,8 @@ class PermissionsTest extends ApiTestSupport {
 
         assertThat(download(visitor, file)).isEqualTo("hello");
         upload(visitor, lib, "Mine.txt", "nope", false, 403);
+        upload(visitor, lib, "Doc.txt", "nope", false, 403);   // not 409: names are not revealed to readers
+        upload(visitor, lib, "Doc.txt", "nope", true, 403);
         call(visitor, delete("/api/v1/nodes/{id}", file), 403);
 
         upload(member, lib, "Mine.txt", "yes", false, 201);
