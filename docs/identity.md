@@ -118,7 +118,7 @@ Templates → Microsoft Office 2016 → Security Settings → Allow specified ho
 to Office apps*, or on one PC (elevated PowerShell, semicolon-separated host names):
 
 ```powershell
-reg add HKCU\Software\Policies\Microsoft\Office.0\Common\Identity /v basichostallowlist /t REG_EXPAND_SZ /d "localhost" /f
+reg add HKCU\Software\Policies\Microsoft\Office\16.0\Common\Identity /v basichostallowlist /t REG_EXPAND_SZ /d "localhost" /f
 ```
 
 Then close every Office app and open the document again. Windows Explorer's mapped drives always use the
