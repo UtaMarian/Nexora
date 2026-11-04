@@ -62,7 +62,7 @@ alerts wait about a minute, so the autosaves of one editing session become a sin
 ## Email
 
 Email goes through an outbox in the database, so a mail outage loses nothing. Failed messages are retried with growing
-delays, up to 8 times over about 8 hours. Those that still fail stay in the outbox and count as failed in health.
+delays, up to 8 times over about 4 hours. Those that still fail stay in the outbox and count as failed in health.
 
 The Docker stack includes Mailpit, which catches all mail at http://localhost:8025 and delivers nothing. For real email,
 set these in `.env`:
