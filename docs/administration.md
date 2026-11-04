@@ -72,8 +72,8 @@ Typical flow:
 
 - Subsites: create one task for each.
 - Wiki and modern pages, web parts, workflows, InfoPath forms, custom solutions.
-- List item attachments and list item version history. The job log counts items with attachments.
-- Lookup and managed metadata columns. Rich text columns keep their text only. Multi-choice values become one
+- List item version history.
+- Multi-value lookup and managed metadata columns. Rich text columns keep their text only. Multi-choice values become one
   combined value.
 - Folder structure inside lists: items are copied flat.
 - On sync: people removed from a group, and items whose unique permissions were reset to inherited in
