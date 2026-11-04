@@ -408,7 +408,7 @@ public class ContentService {
     /** Permanently deletes a recycle-bin item, its descendants, all versions and unreferenced blobs. */
     public void purge(CurrentUser user, UUID id) {
         Node root = deletedRoot(user, id);
-        List<Node> subtree = new ArrayList<>(nodes.findByDeletedRootId(root.getId()));
+        List<Node> subtree = wholeSubtree(root);
         // children before parents so the parent_id foreign key is never violated
         subtree.sort(Comparator.comparingInt((Node n) -> n.getPath().length()).reversed());
         List<UUID> ids = subtree.stream().map(Node::getId).toList();
@@ -427,6 +427,21 @@ public class ContentService {
         if (root.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(root.getId()));
         gc.deleteIfOrphanedAfterCommit(keys);
         audit.record(user, "PURGE", root, Map.of("items", subtree.size()));
+    }
+
+    /** The item and everything under it, including children deleted earlier, which have their own recycle bin entry. */
+    private List<Node> wholeSubtree(Node root) {
+        Map<UUID, Node> found = new LinkedHashMap<>();
+        found.put(root.getId(), root);
+        Set<UUID> frontier = Set.of(root.getId());
+        while (!frontier.isEmpty()) {
+            Set<UUID> next = new HashSet<>();
+            for (Node child : nodes.findByParentIdIn(frontier)) {
+                if (found.putIfAbsent(child.getId(), child) == null) next.add(child.getId());
+            }
+            frontier = next;
+        }
+        return new ArrayList<>(found.values());
     }
 
     private Node deletedRoot(CurrentUser user, UUID id) {

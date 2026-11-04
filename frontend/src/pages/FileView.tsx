@@ -8,6 +8,7 @@ import type { Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
 import { FileIcon } from "../components/FileIcon";
 import { ItemActions } from "../components/ItemActions";
+import { valueText } from "../components/columns";
 import { formatDate, formatSize } from "../components/format";
 
 const useStyles = makeStyles({
@@ -96,7 +97,7 @@ function Fragment2({ k, v, labelClass }: { k: string; v: unknown; labelClass: st
   return (
     <>
       <Text className={labelClass}>{k}</Text>
-      <Text>{typeof v === "boolean" ? (v ? "Yes" : "No") : String(v)}</Text>
+      <Text>{valueText(v)}</Text>
     </>
   );
 }

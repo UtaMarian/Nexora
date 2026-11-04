@@ -65,6 +65,8 @@ public interface NodeRepository extends JpaRepository<Node, UUID> {
 
     List<Node> findByDeletedRootId(UUID rootId);
 
+    List<Node> findByParentIdIn(java.util.Collection<UUID> parentIds);
+
     long countByWorkingStorageKey(String workingStorageKey);
 
     /** Live descendants checked out by someone other than {@code userId} (blocks delete/move of folders). */

@@ -32,6 +32,7 @@ import {
 import { api, ApiError, contentUrl, routeFor, uploadFiles } from "../api/client";
 import type { ColumnDto, Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
+import { ColumnValue } from "../components/columns";
 import { FileIcon } from "../components/FileIcon";
 import { ItemActions } from "../components/ItemActions";
 import { can, useMe } from "../components/me";
@@ -284,7 +285,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
                     <TableCell>{n.hasDraft ? `${n.version} *` : n.version}</TableCell>
                     {shownColumns.map((c) => (
                       <TableCell key={c.id} className={s.hideSm}>
-                        {formatValue(n.metadata?.[c.internalName])}
+                        <ColumnValue column={c} value={n.metadata?.[c.internalName]} />
                       </TableCell>
                     ))}
                     <TableCell>
@@ -317,8 +318,3 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
   );
 }
 
-function formatValue(v: unknown): string {
-  if (v == null) return "";
-  if (typeof v === "boolean") return v ? "Yes" : "No";
-  return String(v);
-}
