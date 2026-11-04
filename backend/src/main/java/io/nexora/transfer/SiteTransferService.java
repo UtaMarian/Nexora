@@ -8,6 +8,12 @@ import io.nexora.acl.PermissionLevel;
 import io.nexora.audit.AuditService;
 import io.nexora.common.ApiException;
 import io.nexora.lists.ItemVersion;
+import io.nexora.workflow.Approval;
+import io.nexora.workflow.ApprovalRepository;
+import io.nexora.workflow.ApprovalStep;
+import io.nexora.workflow.ApprovalStepRepository;
+import io.nexora.workflow.WorkflowRule;
+import io.nexora.workflow.WorkflowRuleRepository;
 import io.nexora.lists.ItemVersionRepository;
 import io.nexora.content.*;
 import io.nexora.identity.CurrentUser;
@@ -58,13 +64,20 @@ public class SiteTransferService {
     private final BlobStore store;
     private final AuditService audit;
     private final ItemVersionRepository itemVersions;
+    private final ApprovalRepository approvals;
+    private final ApprovalStepRepository approvalSteps;
+    private final WorkflowRuleRepository rules;
     private final ObjectMapper json;
 
     public SiteTransferService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                                AclEntryRepository acl, PrincipalRepository principals, GroupMemberRepository members,
                                SitePageRepository pages, SitePageVersionRepository pageVersions,
                                SiteAssetRepository assets, ContentService content, BlobStore store,
-                               AuditService audit, ItemVersionRepository itemVersions, ObjectMapper json) {
+                               AuditService audit, ItemVersionRepository itemVersions, ApprovalRepository approvals,
+                               ApprovalStepRepository approvalSteps, WorkflowRuleRepository rules, ObjectMapper json) {
+        this.approvals = approvals;
+        this.approvalSteps = approvalSteps;
+        this.rules = rules;
         this.itemVersions = itemVersions;
         this.nodes = nodes;
         this.versions = versions;
@@ -134,6 +147,17 @@ public class SiteTransferService {
             pv.forEach(v -> people.add(v.getPublishedBy()));
             pageHistory.put(p.getId(), pv);
         }
+        Map<UUID, List<Approval>> approvalHistory = new HashMap<>();
+        Map<UUID, List<ApprovalStep>> stepHistory = new HashMap<>();
+        for (List<UUID> chunk : chunks(ids)) {
+            for (Approval a : approvals.findByNodeIdIn(chunk)) {
+                approvalHistory.computeIfAbsent(a.getNodeId(), k -> new ArrayList<>()).add(a);
+                people.add(a.getRequestedBy());
+                List<ApprovalStep> steps = approvalSteps.findByApprovalIdOrderByPosition(a.getId());
+                stepHistory.put(a.getId(), steps);
+                steps.forEach(s -> { people.add(s.getPrincipalId()); people.add(s.getDecidedBy()); });
+            }
+        }
         people.remove(null);
         Map<UUID, Principal> byId = new HashMap<>();
         principals.findAllById(people).forEach(p -> byId.put(p.getId(), p));
@@ -190,11 +214,25 @@ public class SiteTransferService {
         Map<String, Object> siteSettings = new HashMap<>(site.getSettings());
         siteSettings.remove(HOME_SETTING);
 
+        List<SitePackage.RuleRec> ruleRecs = new ArrayList<>();
+        for (Node n : tree) {
+            if (!n.getKind().hasColumns()) continue;
+            for (WorkflowRule r : rules.findByContainerIdOrderByCreatedAt(n.getId())) {
+                ruleRecs.add(new SitePackage.RuleRec(n.getId(), r.getName(), r.isEnabled(), r.getDefinition()));
+            }
+        }
+        List<SitePackage.ApprovalRec> approvalRecs = new ArrayList<>();
+        approvalHistory.values().forEach(list -> list.forEach(a -> approvalRecs.add(new SitePackage.ApprovalRec(a.getNodeId(), a.getKind().name(),
+                a.getMode().name(), a.getTitle(), a.getMessage(), a.getStatus().name(), a.getOutcome(), ref.apply(a.getRequestedBy()), a.getRequestedByName(),
+                a.getVersionLabel(), a.getCreatedAt(), a.getDueAt(), a.getCompletedAt(), stepHistory.get(a.getId()).stream().map(s -> new SitePackage.StepRec(
+                        s.getPosition(), ref.apply(s.getPrincipalId()), s.getPrincipalName(), s.getDecision().name(), ref.apply(s.getDecidedBy()), s.getDecidedByName(),
+                        s.getDecidedAt(), s.getComment())).toList()))));
+
         SitePackage pkg = new SitePackage(SitePackage.FORMAT, SitePackage.VERSION, Instant.now(), exportedBy,
                 new SitePackage.SiteRec(site.getId(), site.getName(), site.getTitle(), site.getDescription(), siteSettings,
                         ref.apply(site.getCreatedBy()), site.getCreatedAt()),
                 groupRecs, nodeRecs, columnRecs, aclRecs, pageRecs,
-                logo.map(l -> new SitePackage.LogoRec(l.getMimeType(), l.getSha256())).orElse(null));
+                logo.map(l -> new SitePackage.LogoRec(l.getMimeType(), l.getSha256())).orElse(null), ruleRecs, approvalRecs);
 
         Files.createDirectories(target.toAbsolutePath().getParent());
         Set<String> written = new HashSet<>();
@@ -380,6 +418,30 @@ public class SiteTransferService {
             people.warnings().forEach(w -> log.accept("Warning: " + w));
             log.accept("Restored " + site.getPath() + ": " + count + " items, " + versionCount + " versions, "
                     + pkg.pages().size() + " pages");
+            if (pkg.rules() != null) {
+                for (SitePackage.RuleRec r : pkg.rules()) {
+                    Node container = created.get(r.containerId());
+                    if (container != null) rules.save(new WorkflowRule(container.getId(), r.name(), r.enabled(), r.definition(), actor.id()));
+                }
+            }
+            if (pkg.approvals() != null) {
+                for (SitePackage.ApprovalRec a : pkg.approvals()) {
+                    Node node = created.get(a.nodeId());
+                    if (node == null) continue;
+                    // nobody is waiting on a copy: a request that was still open stays in the record as cancelled
+                    boolean open = Approval.Status.valueOf(a.status()) == Approval.Status.PENDING;
+                    Approval saved = approvals.save(Approval.restored(node.getId(), Approval.Kind.valueOf(a.kind()), Approval.Mode.valueOf(a.mode()), a.title(),
+                            a.message(), open ? Approval.Status.CANCELLED : Approval.Status.valueOf(a.status()), open ? "Cancelled when the site was restored" : a.outcome(),
+                            a.requestedBy() == null ? null : people.id(a.requestedBy()), a.requestedByName(), a.versionLabel(), a.createdAt(), a.dueAt(),
+                            open ? Instant.now() : a.completedAt()));
+                    for (SitePackage.StepRec s : a.steps()) {
+                        ApprovalStep.Decision decision = ApprovalStep.Decision.valueOf(s.decision());
+                        approvalSteps.save(ApprovalStep.restored(saved.getId(), s.position(), s.principal() == null ? null : people.id(s.principal()), s.principalName(),
+                                decision == ApprovalStep.Decision.PENDING ? ApprovalStep.Decision.SKIPPED : decision,
+                                s.decidedBy() == null ? null : people.id(s.decidedBy()), s.decidedByName(), s.decidedAt(), s.comment()));
+                    }
+                }
+            }
             return new ImportResult(site.getId(), site.getPath(), count, versionCount, pkg.pages().size(), people.warnings());
         }
     }

@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
+  CounterBadge,
   Input,
   Menu,
   MenuItem,
@@ -15,7 +16,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { TOASTER_ID } from "./ItemActions";
-import { AlertRegular, ClockRegular, DeleteRegular, HomeRegular, PeopleCommunityRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
+import { AlertRegular, CheckmarkCircleRegular, ClockRegular, DeleteRegular, HomeRegular, PeopleCommunityRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import { useMe } from "./me";
 
@@ -59,6 +60,10 @@ const useStyles = makeStyles({
 export function AppShell({ children }: { children: ReactNode }) {
   const s = useStyles();
   const me = useMe();
+  const waiting = useQuery({
+    queryKey: ["approvals", "count"], refetchInterval: 30000,
+    queryFn: () => api<{ waiting: number }>("/api/v1/me/approvals/count"),
+  });
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
@@ -102,6 +107,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink to="/" className={s.navLink} title="Sites">
             <HomeRegular />
             <span>Sites</span>
+          </NavLink>
+          <NavLink to="/approvals" className={s.navLink} title="Approvals">
+            <CheckmarkCircleRegular />
+            <span>Approvals</span>
+            {!!waiting.data?.waiting && <CounterBadge count={waiting.data.waiting} size="small" color="danger" />}
           </NavLink>
           <NavLink to="/recycle-bin" className={s.navLink} title="Recycle bin">
             <DeleteRegular />

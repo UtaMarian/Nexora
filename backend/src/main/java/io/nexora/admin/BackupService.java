@@ -190,6 +190,7 @@ public class BackupService {
     public void delete(CurrentUser actor, String id) throws IOException {
         get(id);
         deleteTree(dir(id));
+        audit.record(actor, "BACKUP_DELETE", null, Map.of("backup", id));
     }
 
     // ---- restore -------------------------------------------------------------------------------

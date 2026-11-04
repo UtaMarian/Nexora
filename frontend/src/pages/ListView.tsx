@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Badge,
   Button,
   Card,
   Input,
@@ -28,6 +29,7 @@ import {
   AddRegular,
   AlertRegular,
   CalendarLtrRegular,
+  FlashRegular,
   DeleteRegular,
   EditRegular,
   FilterRegular,
@@ -42,6 +44,8 @@ import { Crumbs } from "../components/Crumbs";
 import { can } from "../components/me";
 import { ColumnValue, valueText } from "../components/columns";
 import { AlertDialog } from "../dialogs/AlertDialog";
+import { RulesDialog } from "../workflow/RulesDialog";
+import { approvalBadge } from "../workflow/types";
 import { BUILT_IN, CalendarView, GalleryView, ViewDialog, applyView, cellValue } from "../lists/ListViews";
 import { Empty, ErrorBar, Loading } from "../components/States";
 import { formatRelative } from "../components/format";
@@ -79,7 +83,7 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "id", dir: -1 });
   const [sorted, setSorted] = useState(false);
-  const [dialog, setDialog] = useState<"new" | "settings" | "permissions" | "alert" | null>(null);
+  const [dialog, setDialog] = useState<"new" | "settings" | "permissions" | "alert" | "rules" | null>(null);
   const [editing, setEditing] = useState<NodeDto | null>(null);
   const cols = columns.data ?? [];
   const deepLinked = props.openItemId ? items.data?.find((i) => i.id === props.openItemId) : undefined;
@@ -148,6 +152,9 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
               </ToolbarButton>
             )}
             {can(list, "MANAGE_LISTS") && (
+              <ToolbarButton icon={<FlashRegular />} onClick={() => setDialog("rules")}>Automate</ToolbarButton>
+            )}
+            {can(list, "MANAGE_LISTS") && (
               <ToolbarButton icon={<SettingsRegular />} onClick={() => setDialog("settings")}>
                 List settings
               </ToolbarButton>
@@ -207,7 +214,15 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
                     {tableColumns.map((key) => {
                       const c = cols.find((x) => x.internalName === key);
                       if (c) return <TableCell key={key}><ColumnValue column={c} value={n.metadata?.[key]} /></TableCell>;
-                      if (key === "Title") return <TableCell key={key}><Text weight="semibold">{n.title}</Text></TableCell>;
+                      if (key === "Title") {
+                        const badge = approvalBadge(n.approvalStatus);
+                        return (
+                          <TableCell key={key}>
+                            <Text weight="semibold">{n.title}</Text>
+                            {badge && <Badge appearance="tint" size="small" color={badge.color} style={{ marginLeft: 8 }}>{badge.label}</Badge>}
+                          </TableCell>
+                        );
+                      }
                       if (key === "Modified") return <TableCell key={key} title={n.modifiedBy?.displayName}>{formatRelative(n.modifiedAt)}</TableCell>;
                       if (key === "Created") return <TableCell key={key}>{formatRelative(n.createdAt)}</TableCell>;
                       return <TableCell key={key}>{cellValue(n, key)}</TableCell>;
@@ -244,6 +259,7 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
       {dialog === "settings" && <LibrarySettingsDialog library={list} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={list} onClose={() => setDialog(null)} />}
       {dialog === "alert" && <AlertDialog node={list} onClose={() => setDialog(null)} />}
+      {dialog === "rules" && <RulesDialog container={list} columns={cols} onClose={() => setDialog(null)} />}
       {viewDialog && (
         <ViewDialog list={list} columns={cols} view={viewDialog === "edit" ? view : undefined}
           onSaved={(v) => { setViewId(v.id); setSorted(false); setViewDialog(null); }}

@@ -48,7 +48,7 @@ public final class Dtos {
             PrincipalRef lockedBy, Instant lockExpiresAt,
             PrincipalRef createdBy, Instant createdAt, PrincipalRef modifiedBy, Instant modifiedAt,
             Map<String, Object> metadata, boolean inheritsPermissions,
-            PermissionLevel myLevel, Set<Right> myRights) {}
+            PermissionLevel myLevel, Set<Right> myRights, String approvalStatus) {}
 
     public record NodeDetail(NodeDto node, List<Crumb> breadcrumbs) {}
 

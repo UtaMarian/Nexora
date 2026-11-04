@@ -24,9 +24,11 @@ public class NodeMapper {
     private final FileVersionRepository versions;
     private final PermissionService permissions;
     private final EditLockService editLocks;
+    private final io.nexora.workflow.ApprovalRepository approvals;
 
     public NodeMapper(IdentityService identity, FileVersionRepository versions, PermissionService permissions,
-                      EditLockService editLocks) {
+                      EditLockService editLocks, io.nexora.workflow.ApprovalRepository approvals) {
+        this.approvals = approvals;
         this.editLocks = editLocks;
         this.identity = identity;
         this.versions = versions;
@@ -59,6 +61,12 @@ public class NodeMapper {
         Map<UUID, String> labels = new HashMap<>();
         versions.findAllById(versionIds).forEach(v -> labels.put(v.getId(), v.label()));
         Map<UUID, PermissionLevel> levels = permissions.levels(user, nodes);
+        // the latest request decides the badge
+        Map<UUID, io.nexora.workflow.Approval> latest = new HashMap<>();
+        List<UUID> approvable = nodes.stream().filter(n -> n.getKind() == Node.Kind.FILE || n.getKind() == Node.Kind.LIST_ITEM).map(Node::getId).toList();
+        if (!approvable.isEmpty()) {
+            approvals.findByNodeIdIn(approvable).forEach(a -> latest.merge(a.getNodeId(), a, (x, y) -> x.getCreatedAt().isAfter(y.getCreatedAt()) ? x : y));
+        }
 
         List<NodeDto> out = new ArrayList<>(nodes.size());
         for (Node n : nodes) {
@@ -77,7 +85,8 @@ public class NodeMapper {
                     PrincipalRef.of(people.get(n.getCreatedBy())), n.getCreatedAt(),
                     PrincipalRef.of(people.get(n.getModifiedBy())), n.getModifiedAt(),
                     n.getMetadata(), n.isInheritsPermissions(),
-                    level, level == null ? Set.of() : level.rights()));
+                    level, level == null ? Set.of() : level.rights(),
+                    latest.containsKey(n.getId()) ? latest.get(n.getId()).getKind() + ":" + latest.get(n.getId()).getStatus() : null));
         }
         return out;
     }

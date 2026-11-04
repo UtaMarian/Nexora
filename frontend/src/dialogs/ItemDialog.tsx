@@ -19,6 +19,7 @@ import { ColumnInput, changedValues } from "../components/columns";
 import { ErrorBar } from "../components/States";
 import { formatDate } from "../components/format";
 import { ItemExtras } from "../lists/ItemExtras";
+import { RequestApprovalDialog } from "../workflow/RequestApprovalDialog";
 
 /** New / edit form for a list item. Read-only for people without edit rights. */
 export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: NodeDto; onClose: () => void }) {
@@ -29,6 +30,7 @@ export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: 
   const [values, setValues] = useState<Record<string, unknown>>({ ...(item?.metadata ?? {}) });
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState<"APPROVAL" | "REVIEW" | null>(null);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,6 +81,12 @@ export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: 
                 </Text>
               )}
               {item && <ItemExtras item={item} columns={columns} onRestored={props.onClose} />}
+              {item && editable && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button size="small" onClick={() => setAsking("APPROVAL")}>Request approval</Button>
+                  <Button size="small" onClick={() => setAsking("REVIEW")}>Request a review</Button>
+                </div>
+              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={props.onClose}>{editable ? "Cancel" : "Close"}</Button>
@@ -90,6 +98,7 @@ export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: 
             </DialogActions>
           </DialogBody>
         </form>
+        {asking && item && <RequestApprovalDialog node={item} kind={asking} onClose={() => setAsking(null)} />}
       </DialogSurface>
     </Dialog>
   );

@@ -42,4 +42,6 @@ Things to try:
 - Share a file with a link, and open it in a private window.
 - As `noah.fischer`, open Shared with me.
 - See email at http://localhost:8025.
+- As `priya.nair`, open Approvals and answer the Health and Safety Policy request, then finish it as `elena.marin`. It publishes as version 2.0.
+- Open Automate in Project documents, then upload a Word file as `liam.walsh` and approve it as `marco.rossi`.
 - Empty the recycle bin, or restore the file Liam deleted by mistake.

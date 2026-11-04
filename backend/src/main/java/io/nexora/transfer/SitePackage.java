@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 public record SitePackage(String format, int formatVersion, Instant exportedAt, String exportedBy, SiteRec site,
                           List<GroupRec> groups, List<NodeRec> nodes, List<ColumnRec> columns, List<AclRec> acl,
-                          List<PageRec> pages, LogoRec logo) {
+                          List<PageRec> pages, LogoRec logo, List<RuleRec> rules, List<ApprovalRec> approvals) {
 
     public static final String FORMAT = "nexora-site";
     public static final int VERSION = 1;
@@ -58,4 +58,13 @@ public record SitePackage(String format, int formatVersion, Instant exportedAt, 
                           Instant publishedAt, boolean home, List<PageVersionRec> versions) {}
 
     public record LogoRec(String mimeType, String sha256) {}
+
+    public record RuleRec(UUID containerId, String name, boolean enabled, Map<String, Object> definition) {}
+
+    public record StepRec(int position, PrincipalRef principal, String principalName, String decision, PrincipalRef decidedBy,
+                          String decidedByName, Instant decidedAt, String comment) {}
+
+    public record ApprovalRec(UUID nodeId, String kind, String mode, String title, String message, String status, String outcome,
+                              PrincipalRef requestedBy, String requestedByName, String versionLabel, Instant createdAt, Instant dueAt,
+                              Instant completedAt, List<StepRec> steps) {}
 }

@@ -16,6 +16,7 @@ import {
 import {
   ArrowDownloadRegular,
   AlertRegular,
+  CommentRegular,
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DeleteRegular,
@@ -43,10 +44,11 @@ import { PermissionsDialog } from "../dialogs/PermissionsDialog";
 import { CheckInDialog } from "../dialogs/CheckInDialog";
 import { ShareDialog } from "../dialogs/ShareDialog";
 import { AlertDialog } from "../dialogs/AlertDialog";
+import { RequestApprovalDialog } from "../workflow/RequestApprovalDialog";
 
 export const TOASTER_ID = "nexora-toaster";
 
-type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | "share" | "alert" | null;
+type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | "share" | "alert" | "approval" | "review" | null;
 
 /** The "…" menu for a file or folder. */
 export function ItemActions(props: {
@@ -145,6 +147,12 @@ export function ItemActions(props: {
             )}
             {can(node, "EDIT_ITEMS") && <MenuItem icon={<ShareRegular />} onClick={() => setDialog("share")}>Share</MenuItem>}
             <MenuItem icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</MenuItem>
+            {isFile && can(node, "EDIT_ITEMS") && (
+              <>
+                <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => setDialog("approval")}>Request approval</MenuItem>
+                <MenuItem icon={<CommentRegular />} onClick={() => setDialog("review")}>Request a review</MenuItem>
+              </>
+            )}
             <MenuItem icon={<InfoRegular />} onClick={() => setDialog("properties")} disabled={!canEdit}>
               Properties
             </MenuItem>
@@ -256,6 +264,8 @@ export function ItemActions(props: {
       {dialog === "permissions" && <PermissionsDialog node={node} onClose={() => setDialog(null)} />}
       {dialog === "share" && <ShareDialog node={node} onClose={() => setDialog(null)} />}
       {dialog === "alert" && <AlertDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "approval" && <RequestApprovalDialog node={node} kind="APPROVAL" onClose={() => setDialog(null)} />}
+      {dialog === "review" && <RequestApprovalDialog node={node} kind="REVIEW" onClose={() => setDialog(null)} />}
       {dialog === "checkin" && (
         <CheckInDialog file={node} minorVersions={props.minorVersions} onClose={() => setDialog(null)} />
       )}

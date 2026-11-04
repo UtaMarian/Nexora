@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Badge,
   Card,
   Menu,
   MenuDivider,
@@ -31,6 +32,7 @@ import {
   AddRegular,
   AlertRegular,
   ArrowUploadRegular,
+  FlashRegular,
   DocumentAddRegular,
   DocumentEditRegular,
   DocumentTextRegular,
@@ -46,6 +48,8 @@ import { api, ApiError, contentUrl, routeFor, uploadFiles } from "../api/client"
 import type { ColumnDto, Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
 import { ColumnValue } from "../components/columns";
+import { RulesDialog } from "../workflow/RulesDialog";
+import { approvalBadge } from "../workflow/types";
 import { AlertDialog } from "../dialogs/AlertDialog";
 import { NewDocumentDialog, type NewDocumentKind } from "../dialogs/NewDocumentDialog";
 import { FileIcon } from "../components/FileIcon";
@@ -104,7 +108,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
     queryFn: () => api<ColumnDto[]>(`/api/v1/nodes/${library.id}/columns`),
   });
 
-  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | "drive" | "alert" | null>(null);
+  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | "drive" | "alert" | "rules" | null>(null);
   const [newDoc, setNewDoc] = useState<{ kind?: NewDocumentKind; template?: NodeDto } | null>(null);
   const templates = useQuery({
     queryKey: ["document-templates", container.siteId],
@@ -190,6 +194,9 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
           <ToolbarButton icon={<HardDriveRegular />} onClick={() => setDialog("drive")}>
             Map network drive
           </ToolbarButton>
+          {isLibrary && can(container, "MANAGE_LISTS") && (
+            <ToolbarButton icon={<FlashRegular />} onClick={() => setDialog("rules")}>Automate</ToolbarButton>
+          )}
           {isLibrary && can(container, "MANAGE_LISTS") && (
             <ToolbarButton icon={<SettingsRegular />} onClick={() => setDialog("settings")}>
               Library settings
@@ -290,6 +297,11 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
                             {n.name}
                           </Link>
                         )}
+                        {approvalBadge(n.approvalStatus) && (
+                          <Badge appearance="tint" size="small" color={approvalBadge(n.approvalStatus)!.color} style={{ marginLeft: 8 }}>
+                            {approvalBadge(n.approvalStatus)!.label}
+                          </Badge>
+                        )}
                         {n.lockedBy && (
                           <Tooltip
                             relationship="label"
@@ -356,6 +368,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
       {dialog === "permissions" && <PermissionsDialog node={container} onClose={() => setDialog(null)} />}
       {dialog === "drive" && <MapDriveDialog node={container} onClose={() => setDialog(null)} />}
       {dialog === "alert" && <AlertDialog node={container} onClose={() => setDialog(null)} />}
+      {dialog === "rules" && <RulesDialog container={container} columns={columns.data ?? []} onClose={() => setDialog(null)} />}
       {newDoc && <NewDocumentDialog parent={container} kind={newDoc.kind} template={newDoc.template} onClose={() => setNewDoc(null)} />}
     </>
   );

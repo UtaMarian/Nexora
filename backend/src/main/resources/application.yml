@@ -95,6 +95,9 @@ nexora:
     # the address people use, for links in email
     public-url: ${NEXORA_PUBLIC_URL:http://localhost:5173}
     worker-enabled: ${NEXORA_MAIL_WORKER:true}
+  workflow:
+    # run rules from this server; turn off on all but one when several share a database
+    worker-enabled: ${NEXORA_WORKFLOW_WORKER:true}
   sharing:
     max-link-days: ${NEXORA_SHARE_MAX_LINK_DAYS:365}
   search:

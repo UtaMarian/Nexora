@@ -26,6 +26,7 @@ import { JobsPage } from "./admin/JobsPage";
 import { SearchAdminPage } from "./admin/SearchAdminPage";
 import { SharingAdminPage } from "./admin/SharingAdminPage";
 import { LinkPage } from "./pages/LinkPage";
+import { ApprovalPage, ApprovalsPage } from "./workflow/ApprovalsPage";
 import { MyAlertsPage, RecentPage, SharedWithMePage } from "./pages/MyPages";
 import { LogsPage } from "./admin/LogsPage";
 import { UsersPage } from "./admin/UsersPage";
@@ -85,6 +86,8 @@ export function App() {
           <Route path="/recycle-bin" element={<RecycleBinPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/approvals" element={<ApprovalsPage />} />
+          <Route path="/approvals/:id" element={<ApprovalPage />} />
           <Route path="/recent" element={<RecentPage />} />
           <Route path="/shared" element={<SharedWithMePage />} />
           <Route path="/alerts" element={<MyAlertsPage />} />

@@ -338,6 +338,7 @@ public class ContentService {
         if (item && !(Objects.equals(oldTitle, node.getTitle()) && oldValues.equals(node.getMetadata()))) {
             itemHistory.record(node, user.id());
             if (!Objects.equals(oldTitle, node.getTitle())) refreshLookups(node);
+            if (metadataPatch == null) audit.record(user, "ITEM_UPDATE", node, Map.of("title", String.valueOf(node.getTitle())));
         }
         return node;
     }

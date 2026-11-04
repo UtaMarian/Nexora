@@ -355,6 +355,20 @@ def main():
     who[PRIYA].put(f"/nodes/{policies}/alert", {"frequency": "DAILY"})
     who[YUKI].put(f"/nodes/{projects}/alert", {"frequency": "IMMEDIATE"})
 
+    # rules, then approvals and a review going through them
+    rule = lambda container, name, definition: admin.post(f"/nodes/{container}/rules", {"name": name, "definition": definition})
+    person = lambda login: {"kind": "PERSON", "login": login, "displayName": PEOPLE[login]}
+    rule(projects, "New project documents need approval", {"trigger": "CREATED", "conditions": [{"column": "FileType", "operator": "eq", "value": "docx"}],
+         "actions": [{"type": "REQUEST_APPROVAL", "people": [person(MARCO)], "mode": "ALL", "dueDays": 5}]})
+    rule(projects, "File what was approved", {"trigger": "APPROVED", "conditions": [], "actions": [{"type": "MOVE_TO_FOLDER", "folder": "Approved"}]})
+    rule(policies, "Remind owners before a policy review", {"trigger": "DATE", "dateColumn": pcol["Next review"], "daysBefore": 30, "conditions": [],
+         "actions": [{"type": "SEND_EMAIL", "people": [{"kind": "COLUMN", "column": pcol["Policy owner"]}], "subject": "{title} is due for review", "body": "It is due in 30 days: {link}"}]})
+    rule(issues, "High priority tickets alert IT", {"trigger": "CREATED", "conditions": [{"column": columns(issues)["Priority"], "operator": "eq", "value": "(1) High"}],
+         "actions": [{"type": "SEND_EMAIL", "people": [person(DANIEL)], "subject": "High priority: {title}", "body": "{by} logged it. {link}"}]})
+    who[SOFIA].post(f"/nodes/{files['Health and Safety Policy.docx']}/approvals", {"kind": "APPROVAL", "mode": "SEQUENTIAL", "people": [ids[PRIYA], ids[ELENA]], "dueDays": 7,
+                    "message": "New lightning distance rule. Please check section 2."})
+    who[PRIYA].post(f"/nodes/{files['Flexible Working Policy.docx']}/approvals", {"kind": "REVIEW", "people": [ids[ANA], ids[DANIEL]], "message": "Does this still match how teams work?"})
+
     # something in the recycle bin
     extra = who[LIAM].upload(folders["Operations"], FILES / "policies" / "Flexible Working Policy.docx", "Uploaded here by mistake")
     who[LIAM].delete(f"/nodes/{extra['id']}")

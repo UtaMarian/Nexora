@@ -91,7 +91,7 @@ const useStyles = makeStyles({
   label: { color: tokens.colorNeutralForeground3 },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
   columnsBox: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "2px" },
-  filter: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "6px", alignItems: "center", "@media (max-width: 640px)": { gridTemplateColumns: "minmax(0, 1fr)" } },
+  filter: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr)) auto", gap: "6px", alignItems: "center", "& > *": { minWidth: 0 }, "@media (max-width: 640px)": { gridTemplateColumns: "minmax(0, 1fr)" } },
 });
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

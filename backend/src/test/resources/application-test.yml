@@ -19,6 +19,8 @@ nexora:
     port: 9
     worker-enabled: false
     public-url: https://nexora.test
+  workflow:
+    worker-enabled: false   # WorkflowTest drains the queue itself
   search:
     engine: lucene
     worker-enabled: false   # SearchTest drains the queue itself

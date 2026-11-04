@@ -179,6 +179,21 @@ See [lists-sharing-alerts.md](lists-sharing-alerts.md) for what these do.
   folder it compares ACL sources: a node with its own permissions has a different source from the shared root, so it is
   unreachable through the link.
 
+## Workflows
+
+See [workflows.md](workflows.md) for what these do. The development plan names a BPMN engine; this first version is a
+small rule engine in the monolith, which covers approvals and simple automation with no extra service.
+
+- **Events follow the search and alert pattern.** `AuditService` hands changes to `WorkflowEvents` in the writer's
+  transaction, and `WorkflowEngine` handles them in the background.
+- **The Workflow account breaks loops.** Events from it are ignored, so no combination of rules can feed itself.
+- **Changes to an approval take a row lock** (`ApprovalRepository.lockedById`), as the first load in the transaction.
+  Simultaneous answers run one at a time, so the last one always sees the others and finishes the approval.
+- **A `STALE` event guards content.** It is written with the change that makes an approval out of date, so `decide`
+  refuses at once, before the worker has cancelled the request.
+- **Definitions name things.** Rules refer to logins, column names, folder paths and list names, not ids, so they survive
+  export. Steps keep names as well as ids, so the record outlives an account.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses

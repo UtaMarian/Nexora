@@ -36,10 +36,18 @@ import java.util.*;
 public class AlertService {
     private static final Logger log = LoggerFactory.getLogger(AlertService.class);
     private static final Duration SETTLE = Duration.ofMinutes(1);
-    private static final Map<String, String> VERBS = Map.of(
-            "FILE_UPLOAD", "added", "FILE_UPDATE", "changed", "ITEM_CREATE", "added", "METADATA_UPDATE", "changed",
-            "ITEM_RESTORE", "restored an older version of", "FOLDER_CREATE", "added", "RENAME", "renamed", "MOVE", "moved",
-            "DELETE", "deleted", "PUBLISH", "published");
+    private static final Map<String, String> VERBS = Map.ofEntries(
+            Map.entry("FILE_UPLOAD", "added"),
+            Map.entry("FILE_UPDATE", "changed"),
+            Map.entry("ITEM_CREATE", "added"),
+            Map.entry("METADATA_UPDATE", "changed"),
+            Map.entry("ITEM_UPDATE", "changed"),
+            Map.entry("ITEM_RESTORE", "restored an older version of"),
+            Map.entry("FOLDER_CREATE", "added"),
+            Map.entry("RENAME", "renamed"),
+            Map.entry("MOVE", "moved"),
+            Map.entry("DELETE", "deleted"),
+            Map.entry("PUBLISH", "published"));
 
     public record AlertDto(UUID id, UUID nodeId, String title, String path, String kind, Frequency frequency, Instant createdAt) {}
 

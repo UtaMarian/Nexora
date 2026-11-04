@@ -53,6 +53,8 @@ export interface NodeDto {
   inheritsPermissions: boolean;
   myLevel?: PermissionLevel;
   myRights: Right[];
+  /** The latest approval or review, as KIND:STATUS. */
+  approvalStatus?: string;
 }
 
 export interface Crumb {

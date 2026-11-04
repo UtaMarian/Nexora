@@ -23,7 +23,7 @@ public class SearchQueue {
     /** Changes to one node. */
     private static final Set<String> NODE_ACTIONS = Set.of(
             "SITE_UPDATE", "LIBRARY_CREATE", "LIST_CREATE", "ITEM_CREATE", "FOLDER_CREATE", "METADATA_UPDATE",
-            "FILE_UPLOAD", "FILE_UPDATE", "CHECK_IN", "PUBLISH", "VERSION_RESTORE", "ITEM_RESTORE");
+            "FILE_UPLOAD", "FILE_UPDATE", "CHECK_IN", "PUBLISH", "VERSION_RESTORE", "ITEM_RESTORE", "ITEM_UPDATE");
     /**
      * Changes that also reach everything below: paths, deletion, or which ACL governs the subtree. Grants and revokes
      * are absent on purpose: they take effect at query time.
