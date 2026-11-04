@@ -1,0 +1,40 @@
+# Showcase site
+
+Builds **Kestrelwind Energy**, a fictional company intranet at `/sites/kestrelwind`, to demonstrate what NEXORA can do.
+The company, its people and its numbers are invented. Illustrations are drawn by `art.js`.
+
+It needs a running Docker stack, Python 3.11+, Node, and Google Chrome.
+
+```sh
+cd deploy
+python -m venv .venv && .venv/bin/pip install python-docx openpyxl python-pptx requests
+(cd showcase && npm i --no-save playwright-core)
+
+node showcase/art.js /tmp/showcase/art
+.venv/bin/python showcase/documents.py /tmp/showcase/art /tmp/showcase/files
+node showcase/pdfs.js /tmp/showcase/files
+
+NEXORA_ADMIN_PASSWORD=... SHOWCASE_PASSWORD=choose-one \
+  .venv/bin/python showcase/seed.py /tmp/showcase/art /tmp/showcase/files --replace
+```
+
+`--replace` deletes an earlier copy of the site first. Nine local accounts are created with `SHOWCASE_PASSWORD`. They
+are demo accounts, so do not run this on a production farm. The last step moves dates into the past with SQL, so the
+site does not look as if everything happened today.
+
+| Sign in as | Role | Shows |
+| --- | --- | --- |
+| `elena.marin` | Site owner, CEO | Everything, including the private Board papers folder |
+| `ana.ionescu`, `daniel.okafor` | Site owners | Editing pages, the site's look and permissions |
+| `marco.rossi` | Member, CFO | Member with access to Board papers |
+| `priya.nair`, `sofia.lindqvist`, `liam.walsh`, `yuki.tanaka` | Members | Everyday work |
+| `noah.fischer` | Visitor | Read-only. Board papers do not exist for this account, even in search |
+
+Things to try:
+
+- Search for `leading edge erosion`, which is only inside a scanned PDF, then `Project Falcon` as `noah.fischer` and as `elena.marin`.
+- Open `Strategy 2030.pptx` in the browser editor, and as two users at once to co-author.
+- See the version history of the Health and Safety Policy, with a 1.1 draft after the published 1.0.
+- Sign in as `sofia.lindqvist` to see unpublished changes on the Safety first page.
+- Open `Highmoor Repowering Project Charter.docx`, checked out by Liam Walsh.
+- Empty the recycle bin, or restore the file Liam deleted by mistake.
