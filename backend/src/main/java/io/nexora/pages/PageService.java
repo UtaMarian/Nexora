@@ -43,7 +43,7 @@ public class PageService {
     public static final long MAX_IMAGE_BYTES = 10L * 1024 * 1024;
     private static final String HOME_SETTING = "homePageId";
     private static final Pattern PAGE_PATH = Pattern.compile(
-            "^(/sites/[^/]+)/" + ContentService.RESERVED_PAGES_NAME + "/([^/]+?)(?:\\.aspx)?/?$", Pattern.CASE_INSENSITIVE);
+            "^(/sites/.+)/" + ContentService.RESERVED_PAGES_NAME + "/([^/]+?)(?:\\.aspx)?/?$", Pattern.CASE_INSENSITIVE);
 
     public record Content(String title, String description, UUID bannerImageId, Canvas canvas) {}
 
@@ -57,11 +57,13 @@ public class PageService {
     private final SitePageVersionRepository versions;
     private final AuditService audit;
     private final SearchQueue search;
+    private final EmbedPolicy embeds;
     private final ObjectMapper json;
 
     public PageService(ContentService content, DocumentService documents, NodeRepository nodes,
                        PermissionService permissions, SitePageRepository pages, SitePageVersionRepository versions,
-                       AuditService audit, SearchQueue search, ObjectMapper json) {
+                       AuditService audit, SearchQueue search, EmbedPolicy embeds, ObjectMapper json) {
+        this.embeds = embeds;
         this.content = content;
         this.documents = documents;
         this.nodes = nodes;
@@ -90,7 +92,7 @@ public class PageService {
                 ? Comparator.comparing(SitePage::getPublishedAt, Comparator.nullsFirst(Comparator.reverseOrder()))
                 : Comparator.comparing((SitePage p) -> currentTitle(p).toLowerCase(Locale.ROOT));
         return pages.findBySiteId(site.getId()).stream()
-                .filter(p -> kind == null || p.getKind() == kind)
+                .filter(p -> kind == null ? p.getKind() != SitePage.Kind.TEMPLATE : p.getKind() == kind)
                 .filter(p -> editor || p.isPublished())
                 .sorted(order)
                 .toList();
@@ -167,13 +169,56 @@ public class PageService {
 
     // ---- writing -------------------------------------------------------------------------------
 
-    public SitePage create(CurrentUser user, UUID siteId, String title, SitePage.Kind kind) {
+    public record TemplateInfo(String id, String title, String description, boolean custom) {}
+
+    /** What a new page can start from: the built-in layouts, and what this site saved. */
+    @Transactional(readOnly = true)
+    public List<TemplateInfo> templates(CurrentUser user, Node site) {
+        permissions.require(user, site, Right.ADD_ITEMS);
+        List<TemplateInfo> out = new ArrayList<>();
+        for (PageTemplate t : PageTemplate.values()) out.add(new TemplateInfo(t.name(), t.title(), t.description(), false));
+        pages.findBySiteId(site.getId()).stream().filter(p -> p.getKind() == SitePage.Kind.TEMPLATE)
+                .sorted(Comparator.comparing(p -> currentTitle(p).toLowerCase(Locale.ROOT)))
+                .forEach(p -> out.add(new TemplateInfo(p.getId().toString(), currentTitle(p), p.getDraftDescription(), true)));
+        return out;
+    }
+
+    /** Keeps a page's layout and content as a starting point for new pages in this site. */
+    public SitePage saveAsTemplate(CurrentUser user, UUID pageId, String title) {
+        SitePage source = get(user, pageId);
+        Node site = siteOf(source);
+        permissions.require(user, site, Right.ADD_ITEMS);
+        if (source.getKind() == SitePage.Kind.TEMPLATE) throw ApiException.badRequest("is_template", "This is already a template");
+        String t = title(title);
+        Content c = current(source);
+        SitePage template = new SitePage(site.getId(), uniqueName(site, "template-" + t), SitePage.Kind.TEMPLATE, t, user.id());
+        template.saveDraft(t, c.description(), c.bannerImageId(), map(c.canvas()), user.id());
+        pages.save(template);
+        audit.record(user, "PAGE_TEMPLATE_CREATE", site, Map.of("template", t));
+        return template;
+    }
+
+    private Canvas startFrom(Node site, String template) {
+        for (PageTemplate t : PageTemplate.values()) if (t.name().equals(template)) return t.canvas().validated();
+        UUID id;
+        try {
+            id = UUID.fromString(template);
+        } catch (IllegalArgumentException e) {
+            throw ApiException.notFound("Template");
+        }
+        SitePage saved = pages.findById(id).filter(p -> p.getKind() == SitePage.Kind.TEMPLATE && p.getSiteId().equals(site.getId()))
+                .orElseThrow(() -> ApiException.notFound("Template"));
+        return canvas(saved.getDraftCanvas());
+    }
+
+    public SitePage create(CurrentUser user, UUID siteId, String title, SitePage.Kind kind, String template) {
         Node site = site(user, siteId);
         permissions.require(user, site, Right.ADD_ITEMS);
         String t = title(title);
         SitePage.Kind k = kind == null ? SitePage.Kind.PAGE : kind;
+        if (k == SitePage.Kind.TEMPLATE) throw ApiException.badRequest("invalid_kind", "Use Save as template on a page");
         SitePage page = new SitePage(site.getId(), uniqueName(site, t), k, t, user.id());
-        page.saveDraft(t, "", null, map(starter(k)), user.id());
+        page.saveDraft(t, "", null, map(template == null || template.isBlank() ? starter(k) : startFrom(site, template)), user.id());
         pages.save(page);
         audit.record(user, k == SitePage.Kind.NEWS ? "NEWS_CREATE" : "PAGE_CREATE", site, Map.of("page", page.getName()));
         return page;
@@ -185,7 +230,7 @@ public class PageService {
             throw ApiException.conflict("page_changed",
                     "Someone else changed this page while you were editing it. Reload it to see their changes.");
         }
-        Canvas canvas = (d.canvas() == null ? Canvas.empty() : d.canvas()).validated();
+        Canvas canvas = (d.canvas() == null ? Canvas.empty() : d.canvas()).validated(new HashSet<>(embeds.hosts()));
         String description = d.description() == null ? "" : d.description().strip();
         if (description.length() > 1000) throw ApiException.badRequest("invalid_page", "The description is too long (1000 characters)");
         for (UUID ref : canvas.references()) sameSite(page, ref, null);
@@ -196,6 +241,7 @@ public class PageService {
 
     public SitePage publish(CurrentUser user, UUID pageId) {
         SitePage page = editable(user, pageId);
+        if (page.getKind() == SitePage.Kind.TEMPLATE) throw ApiException.badRequest("is_template", "Templates are not published. Create a page from it");
         if (!page.hasDraft()) throw ApiException.conflict("nothing_to_publish", "There are no changes to publish");
         page.publish(user.id());
         versions.save(SitePageVersion.of(page));

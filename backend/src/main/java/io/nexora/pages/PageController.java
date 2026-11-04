@@ -28,8 +28,15 @@ public class PageController {
     private final PageService pages;
     private final IdentityService identity;
     private final NodeMapper mapper;
+    private final io.nexora.portal.HubService hubs;
+    private final EmbedPolicy embeds;
+    private final io.nexora.audit.AuditService audit;
 
-    public PageController(PageService pages, IdentityService identity, NodeMapper mapper) {
+    public PageController(PageService pages, IdentityService identity, NodeMapper mapper, io.nexora.portal.HubService hubs,
+                          EmbedPolicy embeds, io.nexora.audit.AuditService audit) {
+        this.hubs = hubs;
+        this.embeds = embeds;
+        this.audit = audit;
         this.pages = pages;
         this.identity = identity;
         this.mapper = mapper;
@@ -38,14 +45,16 @@ public class PageController {
     public record PageSummary(UUID id, UUID siteId, String name, SitePage.Kind kind, String title, String description,
                               String url, UUID bannerImageId, String excerpt, boolean published, boolean hasDraft,
                               int version, PrincipalRef author, Instant publishedAt, PrincipalRef modifiedBy,
-                              Instant modifiedAt, boolean home) {}
+                              Instant modifiedAt, boolean home, String siteTitle) {}
 
     public record PageDetail(PageSummary page, PageService.Content published, PageService.Content draft, int revision,
                              boolean canEdit, boolean canDelete, boolean canSetHome) {}
 
     public record VersionDto(int version, String title, PrincipalRef publishedBy, Instant publishedAt) {}
 
-    public record CreatePage(String title, SitePage.Kind kind) {}
+    public record CreatePage(String title, SitePage.Kind kind, String template) {}
+
+    public record SaveTemplate(String title) {}
 
     public record HomePage(UUID pageId) {}
 
@@ -57,17 +66,54 @@ public class PageController {
     }
 
     @GetMapping("/sites/{siteId}/news")
-    public List<PageSummary> news(@PathVariable UUID siteId, @RequestParam(defaultValue = "10") int limit) {
+    public List<PageSummary> news(@PathVariable UUID siteId, @RequestParam(defaultValue = "10") int limit,
+                                  @RequestParam(defaultValue = "site") String scope) {
         CurrentUser user = CurrentUser.get();
         Node site = pages.site(user, siteId);
-        return summaries(site, pages.news(user, site, limit));
+        if (!"hub".equals(scope)) return summaries(site, pages.news(user, site, limit));
+        // the latest across every site in the hub that this person can see
+        List<PageSummary> all = new ArrayList<>();
+        for (Node member : hubs.sitesInHub(user, site)) all.addAll(summaries(member, pages.news(user, member, limit)));
+        all.sort(Comparator.comparing(PageSummary::publishedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+        return all.subList(0, Math.min(limit, all.size()));
     }
 
     @PostMapping("/sites/{siteId}/pages")
     @ResponseStatus(HttpStatus.CREATED)
     public PageDetail create(@PathVariable UUID siteId, @RequestBody CreatePage body) {
         CurrentUser user = CurrentUser.get();
-        return detail(user, pages.create(user, siteId, body.title(), body.kind()));
+        return detail(user, pages.create(user, siteId, body.title(), body.kind(), body.template()));
+    }
+
+    @GetMapping("/sites/{siteId}/page-templates")
+    public List<PageService.TemplateInfo> templates(@PathVariable UUID siteId) {
+        CurrentUser user = CurrentUser.get();
+        return pages.templates(user, pages.site(user, siteId));
+    }
+
+    @PostMapping("/pages/{id}/save-as-template")
+    @ResponseStatus(HttpStatus.CREATED)
+    public PageDetail saveAsTemplate(@PathVariable UUID id, @RequestBody SaveTemplate body) {
+        CurrentUser user = CurrentUser.get();
+        return detail(user, pages.saveAsTemplate(user, id, body.title()));
+    }
+
+    /** The outside sites pages may embed. */
+    @GetMapping("/embed-hosts")
+    public List<String> embedHosts() {
+        return embeds.hosts();
+    }
+
+    @PutMapping("/admin/embed-hosts")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setEmbedHosts(@RequestBody List<String> hosts) {
+        CurrentUser user = CurrentUser.get();
+        try {
+            embeds.setHosts(hosts, user.id());
+        } catch (IllegalArgumentException e) {
+            throw io.nexora.common.ApiException.badRequest("invalid_host", e.getMessage());
+        }
+        audit.record(user, "EMBED_HOSTS_UPDATE", null, Map.of("hosts", String.join(", ", hosts)));
     }
 
     @PutMapping("/sites/{siteId}/home-page")
@@ -177,7 +223,7 @@ public class PageController {
             out.add(new PageSummary(p.getId(), p.getSiteId(), p.getName(), p.getKind(), c.title(), c.description(),
                     pages.url(site, p), c.bannerImageId(), c.canvas().plainText(240), p.isPublished(), p.hasDraft(),
                     p.getPublishedVersion(), PrincipalRef.of(people.get(author)), p.getPublishedAt(),
-                    PrincipalRef.of(people.get(p.getModifiedBy())), p.getModifiedAt(), p.getId().equals(home)));
+                    PrincipalRef.of(people.get(p.getModifiedBy())), p.getModifiedAt(), p.getId().equals(home), site.getTitle()));
         }
         return out;
     }

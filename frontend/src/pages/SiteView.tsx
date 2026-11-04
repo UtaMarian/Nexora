@@ -21,6 +21,8 @@ import {
   DeleteRegular,
   DocumentOnePageRegular,
   DocumentAddRegular,
+  GlobeAddRegular,
+  GlobeRegular,
   HistoryRegular,
   NewsRegular,
   LibraryRegular,
@@ -39,6 +41,7 @@ import { ChangeLookDialog } from "../dialogs/ChangeLookDialog";
 import { GroupsDialog } from "../dialogs/GroupsDialog";
 import { ItemDialog } from "../dialogs/ItemDialog";
 import { NewListDialog } from "../dialogs/NewListDialog";
+import { NewSubsiteDialog } from "../dialogs/NewSubsiteDialog";
 import { PermissionsDialog } from "../dialogs/PermissionsDialog";
 import { PromptDialog } from "../dialogs/PromptDialog";
 import { PageScreen } from "../pagekit/PageView";
@@ -68,7 +71,7 @@ const useStyles = makeStyles({
   newsBody: { whiteSpace: "pre-wrap", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" },
 });
 
-type DialogKind = "library" | "list" | "members" | "permissions" | "look" | PageKind | null;
+type DialogKind = "library" | "list" | "members" | "permissions" | "look" | "subsite" | PageKind | null;
 
 const HOME_NEWS = { id: "home-news", type: "news" as const, props: { title: "News", limit: 4, layout: "cards" } };
 
@@ -83,6 +86,7 @@ export function SiteView({ site }: { site: NodeDto }) {
   const libraries = useQuery({ queryKey: ["libraries", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/libraries`) });
   const lists = useQuery({ queryKey: ["lists", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/lists`) });
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const subsites = useQuery({ queryKey: ["subsites", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/subsites`) });
   const homePageId = design.data?.homePageId;
   const homePage = useQuery({
     queryKey: ["page", "id", homePageId],
@@ -115,6 +119,9 @@ export function SiteView({ site }: { site: NodeDto }) {
                     <MenuItem icon={<LibraryRegular />} onClick={() => setDialog("library")}>Document library</MenuItem>
                     <MenuItem icon={<TextBulletListSquareRegular />} onClick={() => setDialog("list")}>List</MenuItem>
                   </>
+                )}
+                {can(site, "MANAGE_WEB") && (
+                  <MenuItem icon={<GlobeAddRegular />} onClick={() => setDialog("subsite")}>Subsite</MenuItem>
                 )}
               </MenuList>
             </MenuPopover>
@@ -171,7 +178,7 @@ export function SiteView({ site }: { site: NodeDto }) {
                 <Text as="h2" size={500} weight="semibold">Quick links</Text>
                 <div className={s.quick}>
                   {home.quickLinks.map((l, i) =>
-                    l.url.startsWith("/") ? (
+                    l.url?.startsWith("/") ? (
                       <Link key={i} to={routeFor(l.url)} className={s.quickLink}><LinkRegular />{l.label}</Link>
                     ) : (
                       <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className={s.quickLink}><LinkRegular />{l.label}</a>
@@ -188,6 +195,12 @@ export function SiteView({ site }: { site: NodeDto }) {
           </div>
         </div>
       )}
+      {!!subsites.data?.length && (
+        <div style={{ marginTop: 16 }}>
+          <ContainerSection title="Subsites" nodes={subsites.data} error={subsites.error}
+            icon={<GlobeRegular style={{ fontSize: 26, color: tokens.colorBrandForeground1 }} />} />
+        </div>
+      )}
 
       {dialog === "library" && (
         <PromptDialog title="New document library" label="Library name" submitLabel="Create" onClose={() => setDialog(null)}
@@ -200,6 +213,7 @@ export function SiteView({ site }: { site: NodeDto }) {
       {dialog === "members" && <GroupsDialog site={site} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={site} onClose={() => setDialog(null)} />}
       {dialog === "look" && <ChangeLookDialog site={site} onClose={() => setDialog(null)} />}
+      {dialog === "subsite" && <NewSubsiteDialog site={site} onClose={() => setDialog(null)} />}
       {(dialog === "PAGE" || dialog === "NEWS") && <NewPageDialog site={site} kind={dialog} onClose={() => setDialog(null)} />}
     </>
   );

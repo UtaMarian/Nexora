@@ -194,6 +194,24 @@ small rule engine in the monolith, which covers approvals and simple automation 
 - **Definitions name things.** Rules refer to logins, column names, folder paths and list names, not ids, so they survive
   export. Steps keep names as well as ids, so the record outlives an account.
 
+## Intranet navigation
+
+See [intranet.md](intranet.md) for what these do.
+
+- **A subsite is a `SITE` node with a parent.** It has its own `siteId`, so everything that scopes by site keeps working,
+  and code that means "top-level" asks for `parentId is null`. `Node.groupPrefix()` keeps group logins unique, as
+  `hr.payroll-owners`. Breadcrumbs stop at the node's own site.
+- **Subsites are not part of their parent's content.** A package carries each one as a nested package in `subsites/`,
+  and the parent's own node list leaves them out, so nothing is exported twice.
+- **Hubs are settings, not a table.** `settings.hub` on the hub site holds its name and navigation, and `settings.hubPath`
+  on a joined site holds the hub's path, so packages stay portable. A site restored under a new name drops both.
+- **Trimming happens where news is read.** `HubService.sitesInHub` filters by permission before `PageController` reads
+  any news, so joining a hub cannot reveal a post.
+- **Embeds are checked twice.** `EmbedPolicy` checks the address when a page is saved, and the web part checks again in
+  the browser, so taking a site off the list works on pages already published.
+- **Templates are `SitePage` rows of kind `TEMPLATE`.** They use the page editor's storage and travel in packages, and
+  `PageService` keeps them out of lists and refuses to publish them. Built-in layouts are the `PageTemplate` enum.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses

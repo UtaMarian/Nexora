@@ -110,7 +110,7 @@ public class BackupService {
             DirectoryBackup directory = tx.execute(s -> directory());
             json.writeValue(root.resolve(id).resolve("directory.json").toFile(), directory);
             ctx.log("Saved the directory: " + directory.users().size() + " users, " + directory.groups().size() + " groups");
-            List<Node> sites = nodes.findLiveSites();
+            List<Node> sites = nodes.findLiveRootSites(); // each package carries its subsites
             List<SiteEntry> entries = new ArrayList<>();
             long bytes = 0;
             for (int i = 0; i < sites.size(); i++) {

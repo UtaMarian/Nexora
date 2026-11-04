@@ -108,8 +108,9 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 | Sharing with people and with expiring read-only links, password option, Shared with me, Recent | ✅ |
 | Email alerts, right away or as daily and weekly summaries, through a retrying outbox | ✅ |
 | Approvals and reviews (any, all or in order), a rule builder for libraries and lists; see [docs/workflows.md](docs/workflows.md) | ✅ |
+| Subsites, hub sites with shared navigation, theme and news, mega menus; see [docs/intranet.md](docs/intranet.md) | ✅ |
 | Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
-| Modern pages and news posts at `/sites/<site>/SitePages/<name>.aspx`: page editor with sections (1–3 columns), text, image, documents, list and news web parts; drafts, publish, version history, use as site home page | ✅ |
+| Modern pages and news posts at `/sites/<site>/SitePages/<name>.aspx`: page editor with sections (1–3 columns), text, image, documents, list, news, quick links, events, people and embed web parts; page templates; drafts, publish, version history, use as site home page | ✅ |
 | Central Administration (`/admin`): farm overview and health, site management, jobs, server logs, users, settings | ✅ |
 | Site and farm backup, restore under any URL, site export and import between farms | ✅ |
 | SharePoint migration: scan, copy with versions, metadata and permissions, delta sync, old-URL redirects. Tested against a simulated farm only; see [docs/administration.md](docs/administration.md) | ⚠️ |
@@ -122,7 +123,7 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 
 3. **Office polish**: WOPI proof-key validation.
 4. **Migration, next steps**: validate on a real farm, subsites, multi-value lookups and managed metadata columns.
-5. Content types and a managed-metadata term store, more web parts (quick links, events, people, embed), page templates.
+5. Content types and a managed-metadata term store.
 
 ## Layout
 

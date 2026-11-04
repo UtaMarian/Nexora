@@ -20,7 +20,7 @@ public record Canvas(List<Section> sections) {
     public static final Map<String, Integer> LAYOUTS = Map.of(
             "one", 1, "two", 2, "three", 3, "oneThirdLeft", 2, "oneThirdRight", 2);
     public static final Set<String> BACKGROUNDS = Set.of("none", "soft", "strong");
-    public static final Set<String> TYPES = Set.of("text", "image", "documents", "list", "news");
+    public static final Set<String> TYPES = Set.of("text", "image", "documents", "list", "news", "quicklinks", "events", "people", "embed");
 
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9_-]{1,40}");
 
@@ -34,6 +34,11 @@ public record Canvas(List<Section> sections) {
 
     /** Checks structure and limits, normalises every web part's settings and sanitises rich text. */
     public Canvas validated() {
+        return validated(Set.of());
+    }
+
+    /** @param embedHosts the outside sites embed web parts may show */
+    public Canvas validated(Set<String> embedHosts) {
         List<Section> in = sections == null ? List.of() : sections;
         if (in.size() > MAX_SECTIONS) throw bad("A page can have at most " + MAX_SECTIONS + " sections");
         int parts = 0;
@@ -54,7 +59,7 @@ public record Canvas(List<Section> sections) {
                 List<WebPart> src = c < given.size() && given.get(c) != null ? given.get(c) : List.of();
                 for (WebPart w : src) {
                     if (++parts > MAX_WEB_PARTS) throw bad("A page can have at most " + MAX_WEB_PARTS + " web parts");
-                    WebPart v = webPart(w);
+                    WebPart v = webPart(w, embedHosts);
                     if (!ids.add(v.id())) throw bad("Duplicate web part id '" + v.id() + "'");
                     column.add(v);
                 }
@@ -91,7 +96,7 @@ public record Canvas(List<Section> sections) {
         return b.toString().strip();
     }
 
-    private static WebPart webPart(WebPart w) {
+    private static WebPart webPart(WebPart w, Set<String> embedHosts) {
         if (w == null) throw bad("Empty web part");
         if (w.id() == null || !ID.matcher(w.id()).matches()) {
             throw bad("Every web part needs an id (letters, digits, - and _)");
@@ -121,10 +126,63 @@ public record Canvas(List<Section> sections) {
                 out.put("title", str(p, "title", 120, "Title"));
                 out.put("limit", num(p, "limit", 1, 20, 4));
                 out.put("layout", oneOf(p, "layout", Set.of("cards", "list"), "cards"));
+                out.put("scope", oneOf(p, "scope", Set.of("site", "hub"), "site"));
+            }
+            case "quicklinks" -> {
+                out.put("title", str(p, "title", 120, "Title"));
+                out.put("layout", oneOf(p, "layout", Set.of("tiles", "list"), "tiles"));
+                List<Map<String, Object>> links = new ArrayList<>();
+                for (Map<String, Object> l : rows(p, "links", 24, "Links")) {
+                    String label = str(l, "label", 60, "Link label");
+                    String url = str(l, "url", 2048, "Link address");
+                    if (label.isEmpty() || !io.nexora.content.SafeUrls.isSafe(url)) throw bad("Every link needs a label and a safe address");
+                    links.add(Map.of("label", label, "url", url, "description", str(l, "description", 120, "Link description")));
+                }
+                out.put("links", links);
+            }
+            case "events" -> {
+                putId(out, p, "listId");
+                out.put("title", str(p, "title", 120, "Title"));
+                out.put("limit", num(p, "limit", 1, 20, 5));
+                out.put("dateColumn", str(p, "dateColumn", 120, "Date column"));
+            }
+            case "people" -> {
+                out.put("title", str(p, "title", 120, "Title"));
+                List<Map<String, Object>> people = new ArrayList<>();
+                for (Map<String, Object> m : rows(p, "people", 24, "People")) {
+                    String login = str(m, "login", 255, "Person");
+                    if (login.isEmpty()) throw bad("Every person needs an account");
+                    people.add(Map.of("login", login, "displayName", str(m, "displayName", 255, "Name"), "role", str(m, "role", 120, "Role")));
+                }
+                out.put("people", people);
+            }
+            case "embed" -> {
+                String url = EmbedPolicy.normalize(str(p, "url", 2048, "Address"));
+                if (!url.isEmpty() && !EmbedPolicy.allows(url, embedHosts)) {
+                    throw bad("Pages cannot embed '" + url + "'. An administrator can allow that site");
+                }
+                out.put("url", url);
+                out.put("title", str(p, "title", 120, "Title"));
+                out.put("height", num(p, "height", 200, 1200, 420));
             }
             default -> throw new IllegalStateException(w.type());
         }
         return new WebPart(w.id(), w.type(), out);
+    }
+
+    private static List<Map<String, Object>> rows(Map<String, Object> p, String key, int max, String what) {
+        Object v = p.get(key);
+        if (v == null) return List.of();
+        if (!(v instanceof List<?> list)) throw bad(what + " must be a list");
+        if (list.size() > max) throw bad(what + ": at most " + max);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object row : list) {
+            if (!(row instanceof Map<?, ?> m)) throw bad(what + " must be a list");
+            Map<String, Object> copy = new LinkedHashMap<>();
+            m.forEach((k, x) -> copy.put(String.valueOf(k), x));
+            out.add(copy);
+        }
+        return out;
     }
 
     private static void putId(Map<String, Object> out, Map<String, Object> p, String key) {

@@ -62,11 +62,12 @@ public class SearchQueue {
         queue.save(new SearchQueueEntry(Kind.TEXT, nodeId));
     }
 
-    /** Queues all nodes of a site, including deleted ones so they leave the index, and its published pages. */
+    /** Queues all nodes of a site and its subsites, including deleted ones so they leave the index, and their pages. */
     @Transactional
-    public void wholeSite(UUID siteId) {
-        insert("NODE", "node", "where site_id = ?", siteId);
-        insert("PAGE", "site_page", "where site_id = ?", siteId);
+    public void wholeSite(UUID siteId, String path) {
+        String below = NodeRepository.likePrefix(path);
+        insert("NODE", "node", "where id = ? or path like ? escape '\\'", siteId, below);
+        insert("PAGE", "site_page", "where site_id in (select id from node where id = ? or path like ? escape '\\')", siteId, below);
     }
 
     /** Queues the items that went to the recycle bin together with {@code rootId}. */

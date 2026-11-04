@@ -72,6 +72,8 @@ export interface SiteRow {
   createdAt: string;
   lastModified: string;
   owners: string[];
+  subsite: boolean;
+  hub: boolean;
 }
 
 export interface BackupSite {

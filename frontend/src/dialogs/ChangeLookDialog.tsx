@@ -25,7 +25,7 @@ import {
 } from "@fluentui/react-components";
 import { CheckmarkRegular } from "@fluentui/react-icons";
 import { api, ApiError } from "../api/client";
-import type { DesignResponse, NodeDto, SiteDesign } from "../api/types";
+import type { DesignResponse, Hub, Link, NodeDto, SiteDesign } from "../api/types";
 import { ErrorBar, Loading } from "../components/States";
 import { THEME_PRESETS } from "../components/siteTheme";
 import { LinkEditor } from "./LinkEditor";
@@ -46,7 +46,7 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}` },
 });
 
-type TabId = "theme" | "header" | "navigation" | "home";
+type TabId = "theme" | "header" | "navigation" | "home" | "hub";
 
 /** SharePoint's "Change the look": theme, header, navigation and home page of a site. */
 export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: () => void }) {
@@ -55,18 +55,25 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
   const current = useQuery({ queryKey: ["design", site.id], queryFn: () => api<DesignResponse>(`/api/v1/sites/${site.id}/design`) });
   const libraries = useQuery({ queryKey: ["libraries", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/libraries`) });
   const lists = useQuery({ queryKey: ["lists", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/lists`) });
+  const hubs = useQuery({ queryKey: ["hubs"], queryFn: () => api<Hub[]>("/api/v1/hubs") });
 
   const [tab, setTab] = useState<TabId>("theme");
   const [draft, setDraft] = useState<SiteDesign | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | undefined>();
+  const [hubDraft, setHubDraft] = useState<{ title: string; navigation: Link[] } | null>(null);
+  const [joined, setJoined] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (current.data && !draft) {
       setDraft(structuredClone(current.data.design));
       setLogoUrl(current.data.logoUrl);
+      setJoined(current.data.joinedHubId ?? "");
+      if (current.data.isHub && current.data.hub) {
+        setHubDraft({ title: current.data.hub.title, navigation: structuredClone(current.data.hub.navigation) });
+      }
     }
   }, [current.data, draft]);
 
@@ -85,7 +92,13 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
     setError(null);
     try {
       await api(`/api/v1/sites/${site.id}/design`, { method: "PUT", body: draft });
-      await qc.invalidateQueries({ queryKey: ["design", site.id] });
+      if (hubDraft) {
+        await api(`/api/v1/sites/${site.id}/hub`, { method: "PUT", body: hubDraft });
+      } else if (!current.data?.parent && joined !== (current.data?.joinedHubId ?? "")) {
+        await api(`/api/v1/sites/${site.id}/hub-association`, { method: "PUT", body: { hubId: joined || null } });
+      }
+      await qc.invalidateQueries({ queryKey: ["design"] });   // a hub's changes reach every site in it
+      await qc.invalidateQueries({ queryKey: ["hubs"] });
       onClose();
     } catch (e) {
       setError(e);
@@ -132,11 +145,16 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
               <Tab value="header">Header</Tab>
               <Tab value="navigation">Navigation</Tab>
               <Tab value="home">Home page</Tab>
+              <Tab value="hub">Hub</Tab>
             </TabList>
             <ErrorBar error={error ?? current.error} />
             {!draft ? (
               <Loading />
             ) : tab === "theme" ? (
+              <>
+              {current.data?.hub && !current.data.isHub && (
+                <Text>This site is in the {current.data.hub.title} hub and shows the hub's theme. The theme below applies if it leaves the hub.</Text>
+              )}
               <div className={s.swatches} role="radiogroup" aria-label="Theme">
                 {THEME_PRESETS.map((p) => (
                   <button
@@ -154,6 +172,7 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
                   </button>
                 ))}
               </div>
+              </>
             ) : tab === "header" ? (
               <>
                 <Field label="Layout">
@@ -192,10 +211,41 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
               </>
             ) : tab === "navigation" ? (
               <>
-                <Text>Links in the site header, in this order. Use site addresses like /sites/hr/Policies or full web addresses.</Text>
-                <LinkEditor links={draft.navigation} max={25} siteContent={siteContent}
+                <Text>Links in the site header, in this order. Use site addresses like /sites/hr/Policies or full web addresses. The table button turns a link into a mega menu with columns.</Text>
+                <LinkEditor links={draft.navigation} max={25} siteContent={siteContent} menus
                   onChange={(links) => update((x) => void (x.navigation = links))} />
               </>
+            ) : tab === "hub" ? (
+              hubDraft ? (
+                <>
+                  <Text>This site is a hub. Everyone in the sites that join it sees this bar and this site's theme.</Text>
+                  <Field label="Hub name">
+                    <Input value={hubDraft.title} maxLength={120} onChange={(_, d) => setHubDraft({ ...hubDraft, title: d.value })} />
+                  </Field>
+                  <Field label="Hub navigation">
+                    <LinkEditor links={hubDraft.navigation} max={25} siteContent={siteContent} menus
+                      onChange={(navigation) => setHubDraft({ ...hubDraft, navigation })} />
+                  </Field>
+                </>
+              ) : current.data?.parent ? (
+                <Text>
+                  {current.data.hub ? `This subsite is in the ${current.data.hub.title} hub because its parent site is.` : "A subsite follows the hub of its parent site."}
+                </Text>
+              ) : (
+                <>
+                  <Text>Joining a hub adds its navigation bar and theme to this site, and this site's news to the hub.</Text>
+                  <Field label="Hub" hint="Only a farm administrator can make a site a hub.">
+                    <Dropdown
+                      value={hubs.data?.find((h) => h.id === joined)?.title ?? "None"}
+                      selectedOptions={[joined]}
+                      onOptionSelect={(_, d) => setJoined(d.optionValue ?? "")}
+                    >
+                      <Option value="" text="None">None</Option>
+                      {(hubs.data ?? []).map((h) => <Option key={h.id} value={h.id} text={h.title}>{h.title}</Option>)}
+                    </Dropdown>
+                  </Field>
+                </>
+              )
             ) : (
               <>
                 <Field label="Welcome title">

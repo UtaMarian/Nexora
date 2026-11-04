@@ -106,6 +106,7 @@ public class SiteTransferService {
         Node site = nodes.findLive(siteId).filter(n -> n.getKind() == Node.Kind.SITE)
                 .orElseThrow(() -> ApiException.notFound("Site"));
         List<Node> tree = new ArrayList<>(nodes.findLiveDescendants(NodeRepository.likePrefix(site.getPath())));
+        tree.removeIf(n -> n.getKind() == Node.Kind.SITE || !site.getId().equals(n.getSiteId())); // subsites go as their own packages
         tree.sort(Comparator.comparingInt((Node n) -> depth(n.getPath())).thenComparing(Node::getPath));
         List<UUID> ids = tree.stream().map(Node::getId).toList();
 
@@ -230,7 +231,7 @@ public class SiteTransferService {
 
         SitePackage pkg = new SitePackage(SitePackage.FORMAT, SitePackage.VERSION, Instant.now(), exportedBy,
                 new SitePackage.SiteRec(site.getId(), site.getName(), site.getTitle(), site.getDescription(), siteSettings,
-                        ref.apply(site.getCreatedBy()), site.getCreatedAt()),
+                        ref.apply(site.getCreatedBy()), site.getCreatedAt(), site.isInheritsPermissions()),
                 groupRecs, nodeRecs, columnRecs, aclRecs, pageRecs,
                 logo.map(l -> new SitePackage.LogoRec(l.getMimeType(), l.getSha256())).orElse(null), ruleRecs, approvalRecs);
 
@@ -257,6 +258,18 @@ public class SiteTransferService {
                 zip.write(logo.get().getData());
                 zip.closeEntry();
             }
+            for (Node child : nodes.findLiveChildren(site.getId())) {
+                if (child.getKind() != Node.Kind.SITE) continue;
+                Path nested = Files.createTempFile("nexora-subsite", ".zip");
+                try {
+                    export(child.getId(), exportedBy, nested, log);
+                    zip.putNextEntry(new ZipEntry(SitePackage.SUBSITES + child.getName() + ".zip"));
+                    Files.copy(nested, zip);
+                    zip.closeEntry();
+                } finally {
+                    Files.deleteIfExists(nested);
+                }
+            }
         }
         log.accept("Exported " + site.getPath() + ": " + tree.size() + " items, " + versionCount + " versions, "
                 + pageRecs.size() + " pages");
@@ -280,11 +293,17 @@ public class SiteTransferService {
     @Transactional
     public ImportResult importSite(Path zipPath, String targetName, String titleOverride, CurrentUser actor,
                                    Consumer<String> log) throws IOException {
+        return importInto(null, zipPath, targetName, titleOverride, actor, log);
+    }
+
+    private ImportResult importInto(Node parent, Path zipPath, String targetName, String titleOverride, CurrentUser actor,
+                                    Consumer<String> log) throws IOException {
         try (ZipFile zip = new ZipFile(zipPath.toFile())) {
             SitePackage pkg = manifest(zip);
             String name = targetName == null || targetName.isBlank() ? pkg.site().name() : targetName;
             String title = titleOverride == null || titleOverride.isBlank() ? pkg.site().title() : titleOverride;
-            Node site = content.createSite(actor, name, title, pkg.site().description());
+            Node site = parent == null ? content.createSite(actor, name, title, pkg.site().description())
+                    : content.createSubsite(actor, parent.getId(), name, title, pkg.site().description(), !Boolean.TRUE.equals(pkg.site().inheritsPermissions()));
             Resolver people = new Resolver(site, actor);
 
             // the site's groups: same members as in the package
@@ -311,15 +330,15 @@ public class SiteTransferService {
             int versionCount = 0;
             int count = 0;
             for (SitePackage.NodeRec r : pkg.nodes()) {
-                Node parent = created.get(r.parentId());
-                if (parent == null) {
+                Node holder = created.get(r.parentId());
+                if (holder == null) {
                     people.warn("Skipped '" + r.name() + "': its folder is missing from the package");
                     continue;
                 }
                 Node.Kind kind = Node.Kind.valueOf(r.kind());
-                Node n = parent == site && kind == Node.Kind.LIBRARY
+                Node n = holder == site && kind == Node.Kind.LIBRARY
                         ? nodes.findLiveByPath(site.getPath() + "/" + r.name()).orElse(null) : null;
-                if (n == null) n = Node.create(kind, parent, r.name(), actor.id());
+                if (n == null) n = Node.create(kind, holder, r.name(), actor.id());
                 n.setTitle(r.title());
                 n.setDescription(r.description());
                 n.setMetadata(people.remapPeople(r.metadata()));
@@ -401,6 +420,7 @@ public class SiteTransferService {
 
             Map<String, Object> settings = new HashMap<>(site.getSettings());
             if (pkg.site().settings() != null) settings.putAll(pkg.site().settings());
+            if (!site.getName().equalsIgnoreCase(pkg.site().name())) settings.remove("hub"); // a copy under a new URL is not a second hub
             if (homePage != null) settings.put(HOME_SETTING, homePage.toString());
             site.setSettings(settings);
             site.importAudit(people.id(pkg.site().createdBy()), pkg.site().createdAt(), actor.id(), Instant.now());
@@ -440,6 +460,17 @@ public class SiteTransferService {
                                 decision == ApprovalStep.Decision.PENDING ? ApprovalStep.Decision.SKIPPED : decision,
                                 s.decidedBy() == null ? null : people.id(s.decidedBy()), s.decidedByName(), s.decidedAt(), s.comment()));
                     }
+                }
+            }
+            for (var entries = zip.entries(); entries.hasMoreElements(); ) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.getName().startsWith(SitePackage.SUBSITES)) continue;
+                Path nested = Files.createTempFile("nexora-subsite", ".zip");
+                try (InputStream in = zip.getInputStream(entry)) {
+                    Files.copy(in, nested, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    importInto(site, nested, null, null, actor, log);
+                } finally {
+                    Files.deleteIfExists(nested);
                 }
             }
             return new ImportResult(site.getId(), site.getPath(), count, versionCount, pkg.pages().size(), people.warnings());
@@ -551,7 +582,7 @@ public class SiteTransferService {
             if (cache.containsKey(key)) return cache.get(key);
             Principal p;
             if (r.siteRole() != null) {
-                p = principals.findByKindAndLogin(Principal.Kind.GROUP, site.getName() + "-" + r.siteRole()).orElse(null);
+                p = principals.findByKindAndLogin(Principal.Kind.GROUP, site.groupPrefix() + "-" + r.siteRole()).orElse(null);
             } else if ("GROUP".equals(r.kind())) {
                 p = principals.findByKindAndLogin(Principal.Kind.GROUP, r.login()).orElseGet(() -> {
                     // a farm group the target does not have yet: create it (directory sync will fill it)

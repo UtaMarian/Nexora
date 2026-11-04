@@ -77,8 +77,10 @@ public class Node {
             n.inheritsPermissions = false; // sites are always permission roots
         } else {
             n.parentId = parent.getId();
-            n.siteId = parent.getSiteId();
             n.path = parent.getPath() + "/" + name;
+            // a subsite is a site of its own, with its own content, pages and groups
+            n.siteId = kind == Kind.SITE ? n.id : parent.getSiteId();
+            if (kind == Kind.SITE) n.inheritsPermissions = false;
         }
         Instant now = Instant.now();
         n.createdBy = actor;
@@ -99,6 +101,11 @@ public class Node {
         if (createdAt != null) this.createdAt = createdAt;
         if (modifiedBy != null) this.modifiedBy = modifiedBy;
         if (modifiedAt != null) this.modifiedAt = modifiedAt;
+    }
+
+    /** What a site's groups are called after: hr for /sites/hr, hr.payroll for /sites/hr/payroll. */
+    public String groupPrefix() {
+        return path.substring("/sites/".length()).replace('/', '.');
     }
 
     public boolean isDeleted() { return deletedAt != null; }

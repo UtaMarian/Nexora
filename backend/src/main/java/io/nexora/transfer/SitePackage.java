@@ -21,6 +21,9 @@ public record SitePackage(String format, int formatVersion, Instant exportedAt, 
     public static final int VERSION = 1;
     public static final String MANIFEST = "manifest.json";
 
+    /** Each subsite travels as a whole package of its own inside this one. */
+    public static final String SUBSITES = "subsites/";
+
     public static String blobEntry(String sha256) {
         return "blobs/" + sha256;
     }
@@ -29,7 +32,7 @@ public record SitePackage(String format, int formatVersion, Instant exportedAt, 
     public record PrincipalRef(String kind, String login, String displayName, String email, String siteRole) {}
 
     public record SiteRec(UUID id, String name, String title, String description, Map<String, Object> settings,
-                          PrincipalRef createdBy, Instant createdAt) {}
+                          PrincipalRef createdBy, Instant createdAt, Boolean inheritsPermissions) {}
 
     public record GroupRec(PrincipalRef group, List<PrincipalRef> members) {}
 

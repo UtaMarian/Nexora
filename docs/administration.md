@@ -6,7 +6,7 @@ Farm administrators open **Central Administration** from the top bar (`/admin`).
 | Page | What it does |
 | --- | --- |
 | Overview | Counts, storage, health of database, storage, Collabora, directory sync and backup folder, server status |
-| Sites | Every site with owners, size and last change; create (template and owner), back up, delete |
+| Sites | Every site and subsite with owners, size and last change; create (template and owner), back up, delete, turn a site into a hub. See [intranet.md](intranet.md) |
 | Backup and restore | Farm backup, site restore, package download and import |
 | SharePoint migration | Connect farms, scan, copy, delta sync, test old links |
 | Search | Health, work waiting, unreadable documents, rebuild the index. See [search.md](search.md) |
@@ -70,7 +70,8 @@ Typical flow:
 
 ### What is not copied
 
-- Subsites: create one task for each.
+- Subsites: NEXORA has subsites, but migration does not create them. Create one task for each, which makes each a
+  top-level site.
 - Wiki and modern pages, web parts, workflows, InfoPath forms, custom solutions.
 - List item version history.
 - Multi-value lookup and managed metadata columns. Rich text columns keep their text only. Multi-choice values become one

@@ -2,12 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Text, tokens } from "@fluentui/react-components";
 import { api } from "../api/client";
 import { ErrorBar, Loading } from "../components/States";
+import { EmbedHostsCard } from "./EmbedHostsCard";
 
 export function SettingsPage() {
   const settings = useQuery({ queryKey: ["admin", "settings"], queryFn: () => api<Record<string, string>>("/api/v1/admin/settings") });
   return (
     <>
-      <Text as="h1" size={700} weight="semibold">Settings</Text>
+      <Text as="h1" size={700} weight="semibold" block style={{ marginBottom: 12 }}>Settings</Text>
+      <EmbedHostsCard />
+      <Text as="h2" size={500} weight="semibold">Server configuration</Text>
       <Text block style={{ margin: "4px 0 12px", color: tokens.colorNeutralForeground3 }}>
         These come from the server's configuration (<code>deploy/.env</code>) and are read-only here. Passwords and keys are never shown.
       </Text>

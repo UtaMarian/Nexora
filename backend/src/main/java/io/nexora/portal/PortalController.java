@@ -31,9 +31,13 @@ public class PortalController {
     private final ContentService content;
     private final NodeMapper mapper;
     private final io.nexora.pages.PageService pages;
+    private final HubService hubs;
+    private final io.nexora.content.NodeRepository nodes;
 
     public PortalController(PortalService portal, ContentService content, NodeMapper mapper,
-                            io.nexora.pages.PageService pages) {
+                            io.nexora.pages.PageService pages, HubService hubs, io.nexora.content.NodeRepository nodes) {
+        this.hubs = hubs;
+        this.nodes = nodes;
         this.pages = pages;
         this.portal = portal;
         this.content = content;
@@ -44,7 +48,19 @@ public class PortalController {
 
     public record Templates(List<TemplateDto> sites, List<TemplateDto> lists) {}
 
-    public record DesignDto(SiteDesign design, String logoUrl, String template, UUID homePageId) {}
+    public record SiteRef(UUID id, String title, String path) {}
+
+    /** @param hub the hub this site is part of, if any; @param joinedHubId the hub it joined itself */
+    public record DesignDto(SiteDesign design, String logoUrl, String template, UUID homePageId, SiteRef parent, HubService.Hub hub,
+                            boolean isHub, UUID joinedHubId) {}
+
+    public record HubRequest(String title, List<SiteDesign.Link> navigation) {}
+
+    public record JoinHub(UUID hubId) {}
+
+    public record EnableHub(boolean enabled) {}
+
+    public record CreateSubsite(@NotBlank String url, String title, String description, SiteTemplate template, Boolean uniquePermissions) {}
 
     public record CreateListRequest(@NotBlank String name, String title, String description, ListTemplate template) {}
 
@@ -126,6 +142,50 @@ public class PortalController {
     private DesignDto dto(CurrentUser user, UUID siteId, SiteDesign design) {
         Node site = content.get(user, siteId);
         String logo = portal.logoVersion(site).map(v -> "/api/v1/sites/" + siteId + "/logo?v=" + v).orElse(null);
-        return new DesignDto(design, logo, portal.template(site).orElse(null), pages.homePageId(site).orElse(null));
+        SiteRef parent = site.getParentId() == null ? null : nodes.findLive(site.getParentId())
+                .map(p -> new SiteRef(p.getId(), p.getTitle(), p.getPath())).orElse(null);
+        UUID joined = HubService.joinedHubPath(site).flatMap(nodes::findLiveByPath).map(Node::getId).orElse(null);
+        return new DesignDto(design, logo, portal.template(site).orElse(null), pages.homePageId(site).orElse(null), parent,
+                hubs.hubOf(site).orElse(null), HubService.isHub(site), joined);
+    }
+
+    // ---- subsites ----
+
+    @GetMapping("/sites/{id}/subsites")
+    public List<NodeDto> subsites(@PathVariable UUID id) {
+        CurrentUser user = CurrentUser.get();
+        return mapper.many(user, content.subsites(user, id));
+    }
+
+    @PostMapping("/sites/{id}/subsites")
+    @ResponseStatus(HttpStatus.CREATED)
+    public NodeDto createSubsite(@PathVariable UUID id, @Valid @RequestBody CreateSubsite body) {
+        CurrentUser user = CurrentUser.get();
+        return mapper.one(user, portal.createSubsite(user, id, body.url(), body.title(), body.description(), body.template(),
+                body.uniquePermissions() == null || body.uniquePermissions()));
+    }
+
+    // ---- hubs ----
+
+    @GetMapping("/hubs")
+    public List<HubService.Hub> hubs() {
+        return hubs.visibleHubs(CurrentUser.get());
+    }
+
+    @PutMapping("/sites/{id}/hub")
+    public HubService.Hub updateHub(@PathVariable UUID id, @RequestBody HubRequest body) {
+        return hubs.update(CurrentUser.get(), id, body.title(), body.navigation());
+    }
+
+    @PutMapping("/sites/{id}/hub-association")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void joinHub(@PathVariable UUID id, @RequestBody JoinHub body) {
+        hubs.join(CurrentUser.get(), id, body.hubId());
+    }
+
+    @PutMapping("/admin/sites/{id}/hub")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void registerHub(@PathVariable UUID id, @RequestBody EnableHub body) {
+        hubs.register(CurrentUser.get(), id, body.enabled());
     }
 }

@@ -3,13 +3,14 @@
     NEXORA_URL=https://localhost:8443 NEXORA_ADMIN_PASSWORD=... SHOWCASE_PASSWORD=... \
         python seed.py <images folder> <documents folder> [--replace]
 
-Run it from deploy/. --replace deletes an earlier showcase site first. The last step moves dates into the past with
+Run it from deploy/. --replace deletes an earlier showcase site, with its subsites and the Foundation site, first. The last step moves dates into the past with
 SQL through `docker compose exec db`, so the site does not look as if everything happened today.
 
 Kestrelwind Energy and all its people are invented.
 """
 import os
 import subprocess
+from datetime import date, timedelta
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ PW = os.environ["SHOWCASE_PASSWORD"]
 IMAGES, FILES = Path(sys.argv[1]), Path(sys.argv[2])
 SLUG = "kestrelwind"
 ROOT = "/sites/" + SLUG
+FOUNDATION = "/sites/kestrelwind-foundation"   # joins the Kestrelwind hub
 
 PEOPLE = {
     "elena.marin": "Elena Marin", "marco.rossi": "Marco Rossi", "priya.nair": "Priya Nair", "daniel.okafor": "Daniel Okafor",
@@ -94,7 +96,12 @@ def text(html): return part("text", html=html)
 def image(file_id, alt, caption="", size="full"): return part("image", fileId=file_id, alt=alt, caption=caption, size=size)
 def documents(lib, title, limit=6): return part("documents", libraryId=lib, title=title, limit=limit)
 def lst(list_id, title, limit=6): return part("list", listId=list_id, title=title, limit=limit)
-def news(title="Latest news", limit=4, layout="cards"): return part("news", title=title, limit=limit, layout=layout)
+def news(title="Latest news", limit=4, layout="cards", scope="site"): return part("news", title=title, limit=limit, layout=layout, scope=scope)
+def quick_links(title, links, layout="tiles"):
+    return part("quicklinks", title=title, layout=layout, links=[{"label": l, "url": u, "description": d} for l, u, d in links])
+def events_part(list_id, title, column, limit=5): return part("events", listId=list_id, title=title, dateColumn=column, limit=limit)
+def people_part(title, rows): return part("people", title=title, people=[{"login": l, "displayName": PEOPLE[l], "role": r} for l, r in rows])
+def embed(url, title, height=380): return part("embed", url=url, title=title, height=height)
 def section(layout, *cols, background="none"): return {"layout": layout, "background": background, "columns": [list(c) for c in cols]}
 
 
@@ -121,7 +128,7 @@ def release_checkouts(node):
     for child in admin.get(f"/nodes/{node}/children"):
         if child["kind"] == "FILE":
             admin.post(f"/nodes/{child['id']}/discard-checkout", ok=(200, 204, 409))
-        elif child["kind"] in ("LIBRARY", "FOLDER"):
+        elif child["kind"] in ("SITE", "LIBRARY", "FOLDER"):
             release_checkouts(child["id"])
 
 
@@ -134,7 +141,7 @@ def main():
 
     # site
     for site in admin.get("/admin/sites"):
-        if site["name"] == SLUG:
+        if site["path"] in (ROOT, FOUNDATION):   # only what this script made; subsites go with their parent
             if "--replace" not in sys.argv:
                 raise SystemExit("The showcase site already exists. Use --replace to build it again.")
             release_checkouts(site["id"])
@@ -301,10 +308,13 @@ def main():
     news_ids = [publish(login, site, title, "NEWS", desc, pics[cover], [section("one", [text(body.split("</h2>", 1)[1])])]) for login, title, desc, cover, body in N]
 
     # pages
+    page = lambda n: f"{ROOT}/SitePages/{n}.aspx"
     about = publish(ANA, site, "About us", "PAGE", "Who we are and why we do it", pics["banner-about.jpg"], [
         section("oneThirdRight", [text("<h2>Our purpose</h2><p>We build and run the clean power stations that let communities leave fossil fuels behind, and we leave every place better than we found it.</p><p>Kestrelwind started in 2008 with six turbines on a ridge in Highmoor. Today, 1,180 colleagues run 31 sites in seven countries.</p><h3>What we believe</h3><ul><li><strong>Everybody home safe.</strong> Nothing is more urgent.</li><li><strong>Good neighbours.</strong> We ask first and we listen.</li><li><strong>Built to last.</strong> Thirty-year assets need thirty-year thinking.</li></ul>")],
                 [image(pics["photo-ridge.jpg"], "Wind turbines on a ridge at dawn", "Highmoor Ridge, where it all began"), lst(contacts, "Leadership team", 4)]),
-        section("three", [text("<h2>2008</h2><p>First six turbines at Highmoor</p>")], [text("<h2>2021</h2><p>Doggerfeld One, our first offshore wind farm</p>")], [text("<h2>2028</h2><p>Northern Reach: 1.5 GW of first power</p>")], background="strong")])
+        section("three", [text("<h2>2008</h2><p>First six turbines at Highmoor</p>")], [text("<h2>2021</h2><p>Doggerfeld One, our first offshore wind farm</p>")], [text("<h2>2028</h2><p>Northern Reach: 1.5 GW of first power</p>")], background="strong"),
+        section("oneThirdLeft", [people_part("Leadership", [(ELENA, "Chief Executive"), (MARCO, "Chief Operating Officer"), (PRIYA, "People and Culture"), (DANIEL, "Digital and IT")])],
+                [embed("https://www.google.com/maps?q=Hamburg&output=embed", "Our head office in Hamburg")])])
     assets = publish(LIAM, site, "Our assets", "PAGE", "Thirty-one sites, seven countries, one control room", pics["banner-assets.jpg"], [
         section("one", [lst(register, "Generation sites", 6)]),
         section("two", [image(pics["photo-sea.jpg"], "Offshore turbines at dusk", "Doggerfeld One at dusk")], [image(pics["photo-storage.jpg"], "Battery containers beneath wind turbines at night", "Ostwall battery site")]),
@@ -327,8 +337,9 @@ def main():
 
     home = publish(ANA, site, "Welcome to Kestrelwind", "PAGE", "Clean power for 1.9 million homes, and everything you need to do your job.", pics["banner-home.jpg"], [
         section("three", [text("<h2>2.4 GW</h2><p>of clean power operating across 31 sites</p>")], [text("<h2>1,180</h2><p>colleagues in seven countries</p>")], [text("<h2>212 days</h2><p>without a lost-time injury</p>")], background="strong"),
-        section("oneThirdRight", [news("Latest news", 3)], [lst(events, "Coming up", 5),
-            text("<h3>Quick links</h3><ul><li><a href=\"" + ROOT + "/SitePages/safety-first.aspx\">Report a near miss</a></li><li><a href=\"" + ROOT + "/Templates\">Forms and templates</a></li><li><a href=\"" + ROOT + "/ITHelp\">Get IT help</a></li><li><a href=\"" + ROOT + "/SitePages/people-and-culture.aspx\">People and culture</a></li></ul>")]),
+        section("oneThirdRight", [news("Latest news", 3, scope="hub")], [events_part(events, "Coming up", ecol["Start time"]),
+            quick_links("Quick links", [("Report a near miss", page("safety-first"), "Takes two minutes"), ("Forms and templates", f"{ROOT}/Templates", "Everything you fill in"),
+                                        ("Get IT help", f"{ROOT}/ITHelp", "Log a ticket"), ("Operations", f"{ROOT}/operations", "The team site")], layout="list")]),
         section("two", [image(pics["photo-sea.jpg"], "Offshore wind turbines at sunset", "Northern Reach will power 1.2 million homes")],
                 [text("<h2>Strategy 2030</h2><p><strong>Twice the clean power, half the wait.</strong> We are heading for 5 GW by 2030, with every wind farm paired with battery storage.</p><blockquote>The energy transition will be won by the people who show up, year after year, in all weathers.</blockquote><p>Elena Marin, Chief Executive</p><p><a href=\"" + ROOT + "/SitePages/sustainability.aspx\">See our commitments</a></p>")], background="soft"),
         section("three", [documents(policies, "Policies and procedures", 5)], [lst(tasks, "Northern Reach tasks", 4)], [lst(register, "Generation sites", 5)])])
@@ -342,13 +353,16 @@ def main():
     # look and feel
     with open(IMAGES / "logo.png", "rb") as f:
         admin.call("PUT", f"/sites/{site}/logo", files={"file": ("logo.png", f, "image/png")})
-    page = lambda n: f"{ROOT}/SitePages/{n}.aspx"
     admin.put(f"/sites/{site}/design", {
         "theme": "teal", "header": {"layout": "extended", "background": "strong", "showTitle": True, "showLogo": True},
         "navigation": [{"label": "Home", "url": ROOT}, {"label": "News", "url": page("news")}, {"label": "About us", "url": page("about-us")}, {"label": "Our assets", "url": page("our-assets")},
-                       {"label": "Safety", "url": page("safety-first")}, {"label": "People", "url": page("people-and-culture")}, {"label": "Sustainability", "url": page("sustainability")},
-                       {"label": "Digital", "url": page("digital-and-it")}, {"label": "Policies", "url": f"{ROOT}/Policies"}, {"label": "Documents", "url": f"{ROOT}/Shared Documents"}],
+                       {"label": "Sustainability", "url": page("sustainability")},
+                       {"label": "Working here", "groups": [
+                           {"heading": "Your work", "links": [{"label": "Safety first", "url": page("safety-first")}, {"label": "People and culture", "url": page("people-and-culture")}, {"label": "Digital and IT", "url": page("digital-and-it")}]},
+                           {"heading": "Documents", "links": [{"label": "Policies", "url": f"{ROOT}/Policies"}, {"label": "Templates", "url": f"{ROOT}/Templates"}, {"label": "All documents", "url": f"{ROOT}/Shared Documents"}]}]}],
         "home": {"welcomeTitle": "Welcome to Kestrelwind", "welcome": "", "quickLinks": [], "showNews": False, "showLibraries": True, "showLists": True}})
+
+    intranet(site, page)
 
     # sharing and alerts
     who[ELENA].post(f"/nodes/{files['Code of Conduct.docx']}/share-people", {"principals": [ids[NOAH]], "level": "READ", "message": "Please read this before your first site visit."})
@@ -376,6 +390,69 @@ def main():
     backdate(site, [i for i in news_ids])
     admin.post("/admin/search/rebuild")
     print("site", ROOT)
+
+
+def intranet(site, page):
+    """A hub, subsites inside the main site, and a separate site that joins the hub."""
+    ops_url, north_url = f"{ROOT}/operations", f"{ROOT}/operations/north-sea"
+    ids = {u["login"]: u["id"] for u in admin.get("/admin/users") if u["login"] in PEOPLE}
+
+    # Operations has its own people; North Sea shares them; Graduates shares the main site's
+    operations = who[ELENA].post(f"/sites/{site}/subsites", {"url": "operations", "title": "Operations", "description": "Keeping 2.4 GW running, safely, every hour of the day.", "template": "TEAM"})["id"]
+    groups = {g["login"].rsplit("-", 1)[1]: g["id"] for g in admin.get(f"/sites/{operations}/groups")}
+    who[ELENA].post(f"/principals/{groups['owners']}/members", {"principalId": ids[MARCO]})
+    for login in (LIAM, SOFIA):
+        who[ELENA].post(f"/principals/{groups['members']}/members", {"principalId": ids[login]})
+    for login in (ANA, DANIEL, PRIYA, YUKI, NOAH):
+        who[ELENA].post(f"/principals/{groups['visitors']}/members", {"principalId": ids[login]})
+    north = who[MARCO].post(f"/sites/{operations}/subsites", {"url": "north-sea", "title": "North Sea", "description": "Doggerfeld One and the Northern Reach build.", "template": "TEAM", "uniquePermissions": False})["id"]
+    who[ELENA].post(f"/sites/{site}/subsites", {"url": "graduates", "title": "Graduate programme", "description": "Rotations, mentors and how to apply.", "template": "TEAM", "uniquePermissions": False})
+
+    visits = who[MARCO].post(f"/sites/{operations}/lists", {"name": "Site visits", "template": "EVENTS"})["id"]
+    day = lambda n: (date.today() + timedelta(days=n)).isoformat()
+    date_col = columns(visits)["Start time"]
+    for title, n, where in [("Highmoor Ridge blade inspection", 6, "Highmoor Ridge"), ("Doggerfeld One crew change", 9, "Esbjerg harbour"), ("Ostwall battery fire drill", 13, "Ostwall"),
+                            ("Sunfield inverter upgrade", 20, "Sunfield")]:
+        who[MARCO].post(f"/nodes/{visits}/items", {"title": title, "values": {date_col: day(n), columns(visits)["End time"]: day(n), columns(visits)["Location"]: where}})
+
+    # a department page from a built-in template, its web parts filled in
+    created = who[MARCO].post(f"/sites/{operations}/pages", {"title": "Operations home", "kind": "PAGE", "template": "DEPARTMENT"})
+    pid = created["page"]["id"]
+    canvas = [section("three", [text("<h2>What we do</h2><p>We run every wind farm, solar park and battery we own, from one control room in Hamburg.</p>")],
+                      [text("<h2>Who it is for</h2><p>Everyone who works on, or depends on, our sites.</p>")],
+                      [text("<h2>Call us</h2><p>The control room answers day and night on +49 40 5550 1000.</p>")], background="strong"),
+              section("oneThirdRight", [news("Operations news", 4, layout="list")],
+                      [quick_links("Quick links", [("North Sea", north_url, "Doggerfeld One and Northern Reach"), ("Safety first", page("safety-first"), "Stop work authority and more")], layout="list"),
+                       events_part(visits, "Site visits", date_col)]),
+              section("one", [people_part("The team", [(MARCO, "Chief Operating Officer"), (LIAM, "Asset Manager"), (SOFIA, "Head of Safety")])], background="soft")]
+    who[MARCO].put(f"/pages/{pid}/draft", {"title": "Operations home", "description": "Everything about running our sites", "bannerImageId": None,
+                                           "canvas": {"sections": canvas}, "revision": created["revision"]})
+    who[MARCO].post(f"/pages/{pid}/publish")
+    who[MARCO].put(f"/sites/{operations}/home-page", {"pageId": pid})
+    who[MARCO].post(f"/pages/{pid}/save-as-template", {"title": "Operations team page"})
+    publish(LIAM, operations, "Doggerfeld availability hits 98.2%", "NEWS", "Our best quarter offshore.", None, [section("one", [text("<p>Fewer weather stops and faster crew changes did it.</p>")])])
+
+    # the hub
+    admin.put(f"/admin/sites/{site}/hub", {"enabled": True})
+    who[ELENA].put(f"/sites/{site}/hub", {"title": "Kestrelwind", "navigation": [
+        {"label": "Departments", "groups": [
+            {"heading": "On the ground", "links": [{"label": "Operations", "url": ops_url}, {"label": "North Sea", "url": north_url}, {"label": "Safety first", "url": page("safety-first")}]},
+            {"heading": "Our people", "links": [{"label": "People and culture", "url": page("people-and-culture")}, {"label": "Graduate programme", "url": f"{ROOT}/graduates"}]},
+            {"heading": "In the community", "links": [{"label": "Foundation", "url": FOUNDATION}, {"label": "Sustainability", "url": page("sustainability")}]}]},
+        {"label": "News", "url": page("news")}, {"label": "Policies", "url": f"{ROOT}/Policies"}, {"label": "IT help", "url": f"{ROOT}/ITHelp"}]})
+
+    # a separate site that joins it: visitors keep their own site, and gain the hub's bar and look
+    foundation = admin.post("/admin/sites", {"url": FOUNDATION.rsplit("/", 1)[1], "title": "Kestrelwind Foundation", "owner": ANA, "template": "TEAM",
+                                             "description": "Every project gives back: EUR 2.4 million to neighbours this year."})["id"]
+    groups = {g["login"].rsplit("-", 1)[1]: g["id"] for g in admin.get(f"/sites/{foundation}/groups")}
+    for login in PEOPLE:
+        if login != ANA:
+            who[ANA].post(f"/principals/{groups['visitors']}/members", {"principalId": ids[login]})
+    who[ANA].put(f"/sites/{foundation}/hub-association", {"hubId": site})
+    with open(IMAGES / "news-team.jpg", "rb") as f:
+        banner = who[ANA].call("POST", f"/sites/{foundation}/page-images", files={"file": ("solar-classroom.jpg", f, "image/jpeg")})["id"]   # pictures belong to one site
+    publish(ANA, foundation, "Highmoor school opens its solar classroom", "NEWS", "Funded by the Foundation, built by the village.", banner,
+            [section("one", [text("<p>Forty pupils now read their own roof's output on a screen in the corridor.</p>")])])
 
 
 def backdate(site, news_ids):

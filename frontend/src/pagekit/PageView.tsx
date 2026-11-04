@@ -20,13 +20,15 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DeleteRegular, EditRegular, HistoryRegular, HomeRegular, SendRegular } from "@fluentui/react-icons";
+import { DeleteRegular, DocumentCopyRegular, EditRegular, HistoryRegular, HomeRegular, SendRegular } from "@fluentui/react-icons";
 import { api, contentUrl, routeFor } from "../api/client";
 import type { PageDetail, PageVersion } from "../api/types";
 import { ErrorBar, Loading } from "../components/States";
 import { formatDate } from "../components/format";
+import { PromptDialog } from "../dialogs/PromptDialog";
 import { CanvasView } from "./CanvasView";
 import { PageEditor } from "./PageEditor";
+import { EditingParts } from "./WebParts";
 
 const useStyles = makeStyles({
   banner: {
@@ -56,6 +58,8 @@ export function PageScreen({ detail, asHome }: { detail: PageDetail; asHome?: bo
   const [params, setParams] = useSearchParams();
   const editing = detail.canEdit && params.get("mode")?.toLowerCase() === "edit";
   const [versions, setVersions] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const { page } = detail;
 
@@ -79,15 +83,17 @@ export function PageScreen({ detail, asHome }: { detail: PageDetail; asHome?: bo
 
   if (editing) {
     return (
-      <PageEditor
-        key={page.id}
-        detail={detail}
-        onClose={() => {
-          if (asHome) navigate(routeFor(page.url));   // the editor URL is the page's own
-          params.delete("mode");
-          setParams(params, { replace: true });
-        }}
-      />
+      <EditingParts.Provider value>
+        <PageEditor
+          key={page.id}
+          detail={detail}
+          onClose={() => {
+            if (asHome) navigate(routeFor(page.url));   // the editor URL is the page's own
+            params.delete("mode");
+            setParams(params, { replace: true });
+          }}
+        />
+      </EditingParts.Provider>
     );
   }
 
@@ -121,6 +127,7 @@ export function PageScreen({ detail, asHome }: { detail: PageDetail; asHome?: bo
               Use the standard home page
             </ToolbarButton>
           )}
+          <ToolbarButton icon={<DocumentCopyRegular />} onClick={() => { setNotice(null); setSavingTemplate(true); }}>Save as template</ToolbarButton>
           {detail.canDelete && (
             <ToolbarButton icon={<DeleteRegular />}
               onClick={() => {
@@ -137,6 +144,20 @@ export function PageScreen({ detail, asHome }: { detail: PageDetail; asHome?: bo
         </Toolbar>
       )}
       <ErrorBar error={error} />
+      {notice && (
+        <MessageBar intent="success" style={{ marginBottom: 12 }}>
+          <MessageBarBody>{notice}</MessageBarBody>
+        </MessageBar>
+      )}
+      {savingTemplate && (
+        <PromptDialog title="Save as template" label="Template name" submitLabel="Save" initial={page.title}
+          onClose={() => setSavingTemplate(false)}
+          onSubmit={async (title) => {
+            await api(`/api/v1/pages/${page.id}/save-as-template`, { method: "POST", body: { title } });
+            await qc.invalidateQueries({ queryKey: ["page-templates", page.siteId] });
+            setNotice(`Saved. ${title} is now offered when anyone in this site creates a page.`);
+          }} />
+      )}
       {detail.canEdit && !page.published && (
         <MessageBar intent="warning" style={{ marginBottom: 12 }}>
           <MessageBarBody>This {page.kind === "NEWS" ? "news post" : "page"} is a draft. Only people who can edit pages see it.</MessageBarBody>

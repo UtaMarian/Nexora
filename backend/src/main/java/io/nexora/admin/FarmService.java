@@ -83,7 +83,8 @@ public class FarmService {
                            Map<String, Object> server, List<AdminJob> runningJobs) {}
 
     public record SiteRow(UUID id, String name, String path, String title, String description, String template,
-                          long files, long bytes, Instant createdAt, Instant lastModified, List<String> owners) {}
+                          long files, long bytes, Instant createdAt, Instant lastModified, List<String> owners,
+                          boolean subsite, boolean hub) {}
 
     // ---- overview ------------------------------------------------------------------------------
 
@@ -193,7 +194,7 @@ public class FarmService {
         List<SiteRow> out = new ArrayList<>();
         for (Node s : nodes.findLiveSites()) {
             Object[] st = stats.get(s.getId());
-            List<String> owners = principals.findByKindAndLogin(Principal.Kind.GROUP, s.getName() + "-owners")
+            List<String> owners = principals.findByKindAndLogin(Principal.Kind.GROUP, s.groupPrefix() + "-owners")
                     .map(g -> {
                         List<UUID> ids = members.findByGroupId(g.getId()).stream().map(GroupMember::getMemberId).toList();
                         return principals.findAllById(ids).stream().map(Principal::getDisplayName).sorted().toList();
@@ -202,7 +203,7 @@ public class FarmService {
             out.add(new SiteRow(s.getId(), s.getName(), s.getPath(), s.getTitle(), s.getDescription(),
                     Objects.toString(s.getSettings().get("template"), null),
                     st == null ? 0 : (Long) st[1], st == null ? 0 : ((Number) st[2]).longValue(),
-                    s.getCreatedAt(), last, owners));
+                    s.getCreatedAt(), last, owners, s.getParentId() != null, io.nexora.portal.HubService.isHub(s)));
         }
         return out;
     }
@@ -218,7 +219,7 @@ public class FarmService {
         }
         Node site = portal.createSite(actor, url, title, description, template);
         if (owner != null && !owner.getId().equals(actor.id())) {
-            Principal owners = principals.findByKindAndLogin(Principal.Kind.GROUP, site.getName() + "-owners").orElseThrow();
+            Principal owners = principals.findByKindAndLogin(Principal.Kind.GROUP, site.groupPrefix() + "-owners").orElseThrow();
             members.save(new GroupMember(owners.getId(), owner.getId()));
             members.findByGroupId(owners.getId()).stream()
                     .filter(m -> m.getMemberId().equals(actor.id())).forEach(members::delete);

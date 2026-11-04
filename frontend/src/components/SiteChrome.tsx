@@ -2,10 +2,11 @@ import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, FluentProvider, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { PaintBrushRegular } from "@fluentui/react-icons";
+import { ArrowUpLeftRegular, PaintBrushRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
 import type { DesignResponse, Link as NavLink, NodeDetail } from "../api/types";
 import { can } from "./me";
+import { NavItems } from "./NavLinks";
 import { siteTheme } from "./siteTheme";
 import { useSystemDark } from "./useSystemDark";
 import { ChangeLookDialog } from "../dialogs/ChangeLookDialog";
@@ -48,6 +49,17 @@ const useStyles = makeStyles({
     borderBottom: "2px solid transparent",
     ":hover": { backgroundColor: "rgba(127,127,127,0.15)" },
   },
+  hubBar: {
+    display: "flex", alignItems: "center", gap: "4px 14px", flexWrap: "wrap", padding: "4px 12px", marginBottom: "8px",
+    borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorBrandBackgroundPressed,
+    color: tokens.colorNeutralForegroundOnBrand,
+  },
+  hubTitle: { color: "inherit", textDecoration: "none", fontWeight: tokens.fontWeightSemibold, padding: "6px 4px" },
+  hubNav: { display: "flex", gap: "2px", flexWrap: "wrap", flex: "1 1 auto", minWidth: 0 },
+  parent: {
+    display: "inline-flex", alignItems: "center", gap: "4px", color: "inherit", textDecoration: "none", opacity: 0.85,
+    fontSize: tokens.fontSizeBase200, ":hover": { textDecoration: "underline" },
+  },
   navActive: { borderBottomColor: "currentColor", fontWeight: tokens.fontWeightSemibold },
   settings: { color: "inherit" },
 });
@@ -64,7 +76,8 @@ export function SiteChrome({ siteId, children }: { siteId: string; children: Rea
 
   const d = design.data?.design;
   const node = site.data?.node;
-  const theme = siteTheme(d?.theme, dark);
+  const hub = design.data?.hub;
+  const theme = siteTheme(hub?.theme ?? d?.theme, dark);   // a hub gives its sites one look
   if (!d || !node) return <FluentProvider theme={theme} className={s.provider}>{children}</FluentProvider>;
 
   const { layout, background, showTitle, showLogo } = d.header;
@@ -73,29 +86,27 @@ export function SiteChrome({ siteId, children }: { siteId: string; children: Rea
   const title = node.title ?? node.name;
   const current = decodeURIComponent(pathname).toLowerCase();
   const isActive = (l: NavLink) => {
-    if (!l.url.startsWith("/")) return false;
+    if (!l.url?.startsWith("/")) return false;
     const u = l.url.toLowerCase();
     return u === node.path.toLowerCase() ? current === u : current === u || current.startsWith(u + "/");
   };
 
   const nav = (
     <nav className={mergeClasses(s.nav, layout === "compact" && s.navInline)} aria-label={`${title} navigation`}>
-      {d.navigation.map((l, i) =>
-        l.url.startsWith("/") ? (
-          <Link key={i} to={routeFor(l.url)} className={mergeClasses(s.navLink, isActive(l) && s.navActive)}>
-            {l.label}
-          </Link>
-        ) : (
-          <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" className={s.navLink}>
-            {l.label}
-          </a>
-        ),
-      )}
+      <NavItems links={d.navigation} linkClass={s.navLink} activeClass={s.navActive} isActive={isActive} />
     </nav>
   );
 
   return (
     <FluentProvider theme={theme} className={s.provider}>
+      {hub && (
+        <div className={s.hubBar}>
+          <Link to={routeFor(hub.path)} className={s.hubTitle}>{hub.title}</Link>
+          <nav className={s.hubNav} aria-label={`${hub.title} hub navigation`}>
+            <NavItems links={hub.navigation} linkClass={s.navLink} />
+          </nav>
+        </div>
+      )}
       <header
         className={mergeClasses(
           s.header,
@@ -117,6 +128,11 @@ export function SiteChrome({ siteId, children }: { siteId: string; children: Rea
             ))}
           {showTitle && (
             <div className={s.titles}>
+              {design.data?.parent && (
+                <Link to={routeFor(design.data.parent.path)} className={s.parent}>
+                  <ArrowUpLeftRegular aria-hidden /> {design.data.parent.title}
+                </Link>
+              )}
               <Link to={routeFor(node.path)} className={s.titleLink}>
                 <Text
                   as="h1"

@@ -14,7 +14,7 @@ import { PageScreen } from "../pagekit/PageView";
 import { SitePagesView } from "../pagekit/SitePagesView";
 
 /** /sites/<site>/SitePages[/<page>.aspx]: modern pages live beside the content tree. */
-const PAGES = /^(\/sites\/[^/]+)\/sitepages(\/.*)?$/i;
+const PAGES = /^(\/sites\/.+?)\/sitepages(\/.*)?$/i;
 
 /**
  * Browser URLs mirror SharePoint server-relative URLs (/sites/hr/Shared Documents/Policies),

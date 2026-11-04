@@ -149,7 +149,9 @@ public class DavServlet extends HttpServlet {
             case SitesRoot s -> {
                 collection(xml, PREFIX + "/sites/", "sites", Instant.now());
                 if (children) {
-                    for (Node site : content.visibleSites(user)) node(xml, user, site, hrefFor(site.getPath(), true));
+                    for (Node site : content.visibleSites(user)) {
+                        if (site.getParentId() == null) node(xml, user, site, hrefFor(site.getPath(), true));
+                    }
                 }
             }
             case Real r -> {
@@ -265,7 +267,7 @@ public class DavServlet extends HttpServlet {
             case Missing m -> fail(res, 404);
             case Root r -> listing(res, body, "NEXORA", List.of("sites/"));
             case SitesRoot s -> listing(res, body, "Sites",
-                    content.visibleSites(user).stream().map(n -> n.getName() + "/").toList());
+                    content.visibleSites(user).stream().filter(n -> n.getParentId() == null).map(n -> n.getName() + "/").toList());
             case GhostTarget g -> {
                 if (g.ghost().isAlias()) {
                     stream(res, documents.open(user, g.ghost().aliasOf(), null), body);

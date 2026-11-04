@@ -34,7 +34,10 @@ public interface NodeRepository extends JpaRepository<Node, UUID> {
     @Query("select n from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.deletedAt is null order by lower(n.title)")
     List<Node> findLiveSites();
 
-    @Query("select count(n) > 0 from Node n where n.kind = io.nexora.content.Node.Kind.SITE and lower(n.name) = lower(:name)")
+    @Query("select n from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.parentId is null and n.deletedAt is null order by lower(n.title)")
+    List<Node> findLiveRootSites();
+
+    @Query("select count(n) > 0 from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.parentId is null and lower(n.name) = lower(:name)")
     boolean existsSiteName(@Param("name") String name);
 
     /** All live descendants (not the node itself), by path prefix. */
@@ -80,7 +83,7 @@ public interface NodeRepository extends JpaRepository<Node, UUID> {
     /** Recycle bin: the nodes users explicitly deleted (not the descendants that went with them). */
     @Query("""
             select n from Node n where n.deletedAt is not null and n.deletedRootId = n.id
-              and (:siteId is null or n.siteId = :siteId)
+              and (:siteId is null or n.siteId = :siteId or n.parentId = :siteId)
             order by n.deletedAt desc
             """)
     List<Node> findRecycleBin(@Param("siteId") UUID siteId);

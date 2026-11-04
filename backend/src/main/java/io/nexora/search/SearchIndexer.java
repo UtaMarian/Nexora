@@ -216,7 +216,7 @@ public class SearchIndexer {
         if (n == null) {
             queue.node(id); // purged: this removes it, and its pages if it was a site
         } else if (n.getKind() == Node.Kind.SITE) {
-            queue.wholeSite(id);
+            queue.wholeSite(id, n.getPath());
         } else if (n.isDeleted()) {
             queue.deletedWith(id);
         } else {

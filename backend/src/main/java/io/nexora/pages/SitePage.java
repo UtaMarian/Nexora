@@ -16,7 +16,8 @@ import java.util.UUID;
 @Table(name = "site_page")
 public class SitePage {
 
-    public enum Kind { PAGE, NEWS }
+    /** A TEMPLATE is a starting point: it stays a draft, and is never published or shown to readers. */
+    public enum Kind { PAGE, NEWS, TEMPLATE }
 
     @Id
     private UUID id;

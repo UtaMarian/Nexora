@@ -292,8 +292,8 @@ public class WorkflowEngine {
     }
 
     private String createItem(Action a, Node node, UUID actorId) {
-        String site = node.getPath().split("/", 4)[2];
-        Node list = nodes.findLiveByPath("/sites/" + site + "/" + a.list()).filter(n -> n.getKind() == Node.Kind.LIST)
+        Node site = nodes.findById(node.getSiteId()).orElseThrow(() -> ApiException.notFound("Site"));
+        Node list = nodes.findLiveByPath(site.getPath() + "/" + a.list()).filter(n -> n.getKind() == Node.Kind.LIST)
                 .orElseThrow(() -> ApiException.notFound("List"));
         content.createItem(workflow.user(), list.getId(), fill(a.title(), node, displayName(actorId)), Map.of());
         return "Added an item to " + list.getName();

@@ -45,3 +45,15 @@ Things to try:
 - As `priya.nair`, open Approvals and answer the Health and Safety Policy request, then finish it as `elena.marin`. It publishes as version 2.0.
 - Open Automate in Project documents, then upload a Word file as `liam.walsh` and approve it as `marco.rossi`.
 - Empty the recycle bin, or restore the file Liam deleted by mistake.
+
+## Intranet navigation
+
+The main site is a hub. Try the **Departments** menu in the dark bar, then **Working here** in the site's own navigation.
+
+- `/sites/kestrelwind/operations` is a subsite with its own groups. Its home page came from the Department home template,
+  and it has a saved template, Operations team page.
+- `/sites/kestrelwind/operations/north-sea` and `/sites/kestrelwind/graduates` share the people of their parent.
+- `/sites/kestrelwind-foundation` is a separate site that joined the hub, so its news appears on the Kestrelwind home page.
+- **About us** has a People web part and an embedded map. The map needs internet access.
+
+`--replace` deletes `/sites/kestrelwind`, with its subsites, and `/sites/kestrelwind-foundation`. It touches no other site.

@@ -44,9 +44,16 @@ public class PortalService {
     // ---- creation ------------------------------------------------------------------------------
 
     public Node createSite(CurrentUser user, String slug, String title, String description, SiteTemplate template) {
-        SiteTemplate t = template == null ? SiteTemplate.TEAM : template;
-        Node site = content.createSite(user, slug, title, description);
+        return apply(user, content.createSite(user, slug, title, description), description, template);
+    }
 
+    public Node createSubsite(CurrentUser user, UUID parentId, String slug, String title, String description, SiteTemplate template,
+                              boolean uniquePermissions) {
+        return apply(user, content.createSubsite(user, parentId, slug, title, description, uniquePermissions), description, template);
+    }
+
+    private Node apply(CurrentUser user, Node site, String description, SiteTemplate template) {
+        SiteTemplate t = template == null ? SiteTemplate.TEAM : template;
         Map<String, Node> byTitle = new LinkedHashMap<>();
         nodes.findLiveByPath(site.getPath() + "/" + ContentService.DEFAULT_LIBRARY).ifPresent(d -> byTitle.put("Documents", d));
         for (SiteTemplate.LibrarySpec l : t.libraries) {

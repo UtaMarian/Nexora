@@ -150,7 +150,9 @@ public class SearchService {
 
     private Map<String, List<FacetValue>> labelled(CurrentUser user, Map<String, List<SearchEngine.Facet>> facets) {
         Map<String, String> siteTitles = new HashMap<>();
-        for (Node s : content.visibleSites(user)) siteTitles.put(s.getName().toLowerCase(Locale.ROOT), s.getTitle());
+        for (Node s : content.visibleSites(user)) {
+            if (s.getParentId() == null) siteTitles.put(s.getName().toLowerCase(Locale.ROOT), s.getTitle()); // the facet groups by top-level site
+        }
         Map<String, List<FacetValue>> out = new LinkedHashMap<>();
         facets.forEach((name, values) -> out.put(name, values.stream()
                 .map(f -> new FacetValue(f.value(), name.equals(SearchEngine.FACET_SITE)

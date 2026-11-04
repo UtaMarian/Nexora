@@ -69,6 +69,7 @@ public class ContentService {
 
     /** URL segment of a site's modern pages (/sites/hr/SitePages/home.aspx); no library or list may use it. */
     public static final String RESERVED_PAGES_NAME = "SitePages";
+    private static final int MAX_SITE_DEPTH = 4;
 
     // ---- lookup ----------------------------------------------------------------------------
 
@@ -114,6 +115,7 @@ public class ContentService {
         Node current = node;
         while (current != null) {
             chain.addFirst(current);
+            if (current.getKind() == Node.Kind.SITE) break; // a subsite's content starts at the subsite
             current = current.getParentId() == null ? null : nodes.findById(current.getParentId()).orElse(null);
         }
         return chain;
@@ -123,10 +125,15 @@ public class ContentService {
     public Node libraryOf(Node node) {
         if (node.getKind().hasColumns()) return node;
         if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("not_in_library", "Sites are not in a library or list");
-        String[] seg = node.getPath().split("/");   // "", "sites", site, library, ...
-        String libPath = "/" + seg[1] + "/" + seg[2] + "/" + seg[3];
-        return nodes.findLiveByPath(libPath)
-                .orElseThrow(() -> new IllegalStateException("No library for " + node.getPath()));
+        Node current = node;
+        while (!current.getKind().hasColumns()) {
+            UUID parent = current.getParentId();
+            current = parent == null ? null : nodes.findById(parent).orElse(null);
+            if (current == null || current.getKind() == Node.Kind.SITE) {
+                throw new IllegalStateException("No library for " + node.getPath());
+            }
+        }
+        return current;
     }
 
     @Transactional(readOnly = true)
@@ -160,15 +167,47 @@ public class ContentService {
         site.setTitle(title == null || title.isBlank() ? name : title.strip());
         site.setDescription(description);
         nodes.save(site);
+        return provision(user, site, true);
+    }
 
-        String t = site.getTitle();
-        Principal owners = principals.save(Principal.group(name + "-owners", t + " Owners", site.getId()));
-        Principal membersGroup = principals.save(Principal.group(name + "-members", t + " Members", site.getId()));
-        Principal visitors = principals.save(Principal.group(name + "-visitors", t + " Visitors", site.getId()));
-        members.save(new GroupMember(owners.getId(), user.id()));
-        permissions.grant(site, owners.getId(), PermissionLevel.FULL_CONTROL);
-        permissions.grant(site, membersGroup.getId(), PermissionLevel.EDIT);
-        permissions.grant(site, visitors.getId(), PermissionLevel.READ);
+    /**
+     * Creates a site inside a site. With {@code uniquePermissions} it gets its own Owners, Members and Visitors, and its
+     * creator owns it. Without, it shares its parent's permissions and groups.
+     */
+    public Node createSubsite(CurrentUser user, UUID parentId, String slug, String title, String description, boolean uniquePermissions) {
+        Node parent = get(user, parentId);
+        if (parent.getKind() != Node.Kind.SITE) throw ApiException.badRequest("not_a_site", "Subsites live in a site");
+        permissions.require(user, parent, Right.MANAGE_WEB);
+        int depth = parent.getPath().split("/").length - 2;
+        if (depth >= MAX_SITE_DEPTH) throw ApiException.badRequest("too_deep", "Sites can be nested " + MAX_SITE_DEPTH + " levels deep");
+        String name = Names.siteSlug(slug);
+        assertNoSibling(parent, name);
+        Node site = Node.create(Node.Kind.SITE, parent, name, user.id());
+        site.setTitle(title == null || title.isBlank() ? name : title.strip());
+        site.setDescription(description);
+        site.setInheritsPermissions(!uniquePermissions);
+        nodes.save(site);
+        return provision(user, site, uniquePermissions);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> subsites(CurrentUser user, UUID siteId) {
+        Node site = get(user, siteId);
+        return permissions.filterVisible(user, nodes.findLiveChildren(site.getId()).stream().filter(n -> n.getKind() == Node.Kind.SITE).toList());
+    }
+
+    private Node provision(CurrentUser user, Node site, boolean ownGroups) {
+        if (ownGroups) {
+            String prefix = site.groupPrefix();
+            String t = site.getTitle();
+            Principal owners = principals.save(Principal.group(prefix + "-owners", t + " Owners", site.getId()));
+            Principal membersGroup = principals.save(Principal.group(prefix + "-members", t + " Members", site.getId()));
+            Principal visitors = principals.save(Principal.group(prefix + "-visitors", t + " Visitors", site.getId()));
+            members.save(new GroupMember(owners.getId(), user.id()));
+            permissions.grant(site, owners.getId(), PermissionLevel.FULL_CONTROL);
+            permissions.grant(site, membersGroup.getId(), PermissionLevel.EDIT);
+            permissions.grant(site, visitors.getId(), PermissionLevel.READ);
+        }
 
         Node library = Node.create(Node.Kind.LIBRARY, site, DEFAULT_LIBRARY, user.id());
         library.setTitle("Documents");
@@ -345,6 +384,7 @@ public class ContentService {
 
     public Node move(CurrentUser user, UUID id, UUID targetParentId) {
         Node node = get(user, id);
+        if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("site_url_immutable", "A site cannot be moved");
         if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER) {
             throw ApiException.badRequest("not_movable", "Only files and folders can be moved");
         }
@@ -388,7 +428,9 @@ public class ContentService {
         Node node = get(user, id);
         switch (node.getKind()) {
             case SITE -> {
-                if (!user.admin()) throw ApiException.forbidden("Only administrators can delete sites");
+                boolean parentOwner = node.getParentId() != null && nodes.findLive(node.getParentId())
+                        .filter(parent -> permissions.has(user, parent, Right.MANAGE_WEB)).isPresent();
+                if (!user.admin() && !parentOwner) throw ApiException.forbidden("Only administrators can delete sites");
             }
             case LIBRARY, LIST -> permissions.require(user, node, Right.MANAGE_LISTS);
             default -> permissions.require(user, node, Right.DELETE_ITEMS);
@@ -511,8 +553,10 @@ public class ContentService {
             nodes.flush();
             search.node(n.getId());
         }
-        // a purged site frees its URL, so its Owners, Members and Visitors groups go too
-        if (root.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(root.getId()));
+        // a purged site frees its URL, so its Owners, Members and Visitors groups go too, and those of its subsites
+        for (Node n : subtree) {
+            if (n.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(n.getId()));
+        }
         gc.deleteIfOrphanedAfterCommit(keys);
         audit.record(user, "PURGE", root, Map.of("items", subtree.size()));
     }
@@ -542,7 +586,11 @@ public class ContentService {
 
     private boolean canManageDeleted(CurrentUser user, Node deleted) {
         if (user.admin()) return true;
-        if (deleted.getKind() == Node.Kind.SITE) return false;
+        if (deleted.getKind() == Node.Kind.SITE) {
+            // whoever runs the parent site looks after its subsites
+            return deleted.getParentId() != null && nodes.findById(deleted.getParentId())
+                    .filter(parent -> !parent.isDeleted() && permissions.has(user, parent, Right.MANAGE_WEB)).isPresent();
+        }
         if (user.id().equals(deleted.getDeletedBy())) return true;
         return nodes.findById(deleted.getSiteId())
                 .map(site -> permissions.has(user, site, Right.MANAGE_WEB))

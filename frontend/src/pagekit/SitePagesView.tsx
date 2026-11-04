@@ -1,8 +1,17 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Field,
+  Input,
   Table,
   TableBody,
   TableCell,
@@ -12,37 +21,112 @@ import {
   Text,
   Toolbar,
   ToolbarButton,
+  Tooltip,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
-import { DocumentAddRegular, DocumentOnePageRegular, HomeRegular, NewsRegular } from "@fluentui/react-icons";
+import { DeleteRegular, DocumentAddRegular, DocumentOnePageRegular, HomeRegular, NewsRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
-import type { NodeDto, PageDetail, PageKind, PageSummary } from "../api/types";
+import type { NodeDto, PageDetail, PageKind, PageSummary, PageTemplateInfo } from "../api/types";
 import { can } from "../components/me";
 import { Empty, ErrorBar, Loading } from "../components/States";
 import { formatRelative } from "../components/format";
-import { PromptDialog } from "../dialogs/PromptDialog";
 
 const useStyles = makeStyles({
   title: { display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", color: tokens.colorNeutralForeground1 },
   muted: { color: tokens.colorNeutralForeground3 },
   wrap: { overflowX: "auto" },
+  gallery: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: "10px" },
+  tileWrap: { position: "relative", display: "flex" },
+  tile: {
+    display: "flex", flexDirection: "column", gap: "4px", flex: 1, textAlign: "left", padding: "10px", font: "inherit",
+    cursor: "pointer", borderRadius: tokens.borderRadiusLarge, border: `2px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground1,
+  },
+  tileOn: { border: `2px solid ${tokens.colorBrandStroke1}` },
+  tileDelete: { position: "absolute", top: "4px", right: "4px" },
 });
 
-/** Creates a page or news post and opens it in the editor. */
+/** Creates a page or news post from a template and opens it in the editor. */
 export function NewPageDialog({ site, kind, onClose }: { site: NodeDto; kind: PageKind; onClose: () => void }) {
+  const s = useStyles();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const templates = useQuery({
+    queryKey: ["page-templates", site.id],
+    queryFn: () => api<PageTemplateInfo[]>(`/api/v1/sites/${site.id}/page-templates`),
+  });
+  const [title, setTitle] = useState("");
+  const [template, setTemplate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const choices: PageTemplateInfo[] = [{ id: "", title: "Blank", description: "Start with an empty page", custom: false }, ...(templates.data ?? [])];
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api<PageDetail>(`/api/v1/sites/${site.id}/pages`, {
+        method: "POST",
+        body: { title: title.trim(), kind, template: template || undefined },
+      });
+      navigate(routeFor(created.page.url) + "?mode=edit");
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  };
+
+  const remove = async (t: PageTemplateInfo) => {
+    if (!window.confirm(`Delete the template ${t.title}? Pages made from it stay as they are.`)) return;
+    setError(null);
+    try {
+      await api(`/api/v1/pages/${t.id}`, { method: "DELETE" });
+      if (template === t.id) setTemplate("");
+      await qc.invalidateQueries({ queryKey: ["page-templates", site.id] });
+    } catch (err) {
+      setError(err);
+    }
+  };
+
   return (
-    <PromptDialog
-      title={kind === "NEWS" ? "New news post" : "New page"}
-      label={kind === "NEWS" ? "Headline" : "Page title"}
-      submitLabel="Create"
-      onClose={onClose}
-      onSubmit={async (title) => {
-        const created = await api<PageDetail>(`/api/v1/sites/${site.id}/pages`, { method: "POST", body: { title, kind } });
-        navigate(routeFor(created.page.url) + "?mode=edit");
-      }}
-    />
+    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        <form onSubmit={submit}>
+          <DialogBody>
+            <DialogTitle>{kind === "NEWS" ? "New news post" : "New page"}</DialogTitle>
+            <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <ErrorBar error={error ?? templates.error} />
+              <Field label={kind === "NEWS" ? "Headline" : "Page title"} required>
+                <Input value={title} onChange={(_, d) => setTitle(d.value)} autoFocus />
+              </Field>
+              <div className={s.gallery} role="radiogroup" aria-label="Template">
+                {choices.map((t) => (
+                  <div key={t.id} className={s.tileWrap}>
+                    <button type="button" role="radio" aria-checked={template === t.id}
+                      className={mergeClasses(s.tile, template === t.id && s.tileOn)} onClick={() => setTemplate(t.id)}>
+                      <Text weight="semibold">{t.title}</Text>
+                      <Text size={200} className={s.muted}>{t.description || (t.custom ? "Saved in this site" : "")}</Text>
+                    </button>
+                    {t.custom && (
+                      <Tooltip content={`Delete template ${t.title}`} relationship="label">
+                        <Button className={s.tileDelete} size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => remove(t)} />
+                      </Tooltip>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={onClose}>Cancel</Button>
+              <Button appearance="primary" type="submit" disabled={busy || !title.trim()}>{busy ? "Creating…" : "Create"}</Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
   );
 }
 

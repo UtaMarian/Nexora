@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Badge,
   Button,
   Dialog,
   DialogActions,
@@ -13,6 +14,7 @@ import {
   Field,
   Input,
   Option,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -48,6 +50,19 @@ export function SitesAdminPage() {
       setError(e);
     }
   };
+  const setHub = async (site: SiteRow, enabled: boolean) => {
+    setError(null);
+    try {
+      await api(`/api/v1/admin/sites/${site.id}/hub`, { method: "PUT", body: { enabled } });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["admin", "sites"] }),
+        qc.invalidateQueries({ queryKey: ["design"] }),
+        qc.invalidateQueries({ queryKey: ["hubs"] }),
+      ]);
+    } catch (e) {
+      setError(e);
+    }
+  };
   const remove = async (site: SiteRow) => {
     if (!window.confirm(`Delete ${site.path}? It goes to the recycle bin and can be restored from there.`)) return;
     setError(null);
@@ -75,6 +90,7 @@ export function SitesAdminPage() {
               <TableRow>
                 <TableHeaderCell>Site</TableHeaderCell>
                 <TableHeaderCell>Owners</TableHeaderCell>
+                <TableHeaderCell style={{ width: 80 }}>Hub</TableHeaderCell>
                 <TableHeaderCell style={{ width: 80 }}>Files</TableHeaderCell>
                 <TableHeaderCell style={{ width: 100 }}>Size</TableHeaderCell>
                 <TableHeaderCell style={{ width: 130 }}>Last change</TableHeaderCell>
@@ -86,9 +102,15 @@ export function SitesAdminPage() {
                 <TableRow key={site.id}>
                   <TableCell>
                     <Link to={routeFor(site.path)}>{site.title}</Link>
+                    {site.subsite && <Badge appearance="outline" size="small" style={{ marginLeft: 6 }}>Subsite</Badge>}
                     <Text block size={200} style={{ color: tokens.colorNeutralForeground3 }}>{site.path}</Text>
                   </TableCell>
                   <TableCell>{site.owners.join(", ") || "None"}</TableCell>
+                  <TableCell>
+                    {!site.subsite && (
+                      <Switch checked={site.hub} aria-label={`${site.title} is a hub site`} onChange={(_, d) => setHub(site, d.checked)} />
+                    )}
+                  </TableCell>
                   <TableCell>{site.files}</TableCell>
                   <TableCell>{formatSize(site.bytes)}</TableCell>
                   <TableCell>{formatRelative(site.lastModified)}</TableCell>
