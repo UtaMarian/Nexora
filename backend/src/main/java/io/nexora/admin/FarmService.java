@@ -139,10 +139,14 @@ public class FarmService {
             out.add(new Health("Office Online (Collabora)", wopi.available() ? "OK" : "WARNING",
                     wopi.available() ? "Editor discovery loaded" : "The editor is not reachable"));
         }
-        SearchAdminService.Component index = search.engine();
-        out.add(new Health("Search index", index.ok() ? "OK" : "ERROR", index.name() + ": " + index.detail()));
-        SearchAdminService.Component reader = search.extractor();
-        out.add(new Health("Document reading", reader.ok() ? "OK" : "WARNING", reader.name() + ": " + reader.detail()));
+        if (search.enabled()) {
+            SearchAdminService.Component index = search.engine();
+            out.add(new Health("Search index", index.ok() ? "OK" : "ERROR", index.name() + ": " + index.detail()));
+            SearchAdminService.Component reader = search.extractor();
+            out.add(new Health("Document reading", reader.ok() ? "OK" : "WARNING", reader.name() + ": " + reader.detail()));
+        } else {
+            out.add(new Health("Search", "DISABLED", "Turned off by an administrator"));
+        }
         DirectorySyncService sync = directory.getIfAvailable();
         if (sync == null || !sync.enabled()) {
             out.add(new Health("Directory sync", "DISABLED", "Single sign-on directory sync is off"));

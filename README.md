@@ -92,7 +92,7 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 | Custom columns (text, note, number, date, yes/no, choice) with validation | ✅ |
 | Permission levels Read / Contribute / Edit / Full Control, inheritance, break/reset, nested groups | ✅ |
 | Security-trimmed listings and search; inaccessible items return 404 | ✅ |
-| Full-text search inside documents, list items, pages and news, with OCR for images and scans, snippets, filters and query syntax; see [docs/search.md](docs/search.md) | ✅ |
+| Full-text search inside documents, list items, pages and news, with OCR for images and scans, snippets, filters and query syntax; administrators can turn search on and off; see [docs/search.md](docs/search.md) | ✅ |
 | Recycle bin with restore and permanent delete (blob garbage collection) | ✅ |
 | Audit log of reads, writes and permission changes; mirrored to the `nexora.audit` logger for SIEM | ✅ |
 | SharePoint-style URLs (`/sites/hr/Shared Documents/a.docx`) in the API (`/api/v1/resolve`) and the browser | ✅ |

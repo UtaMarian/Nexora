@@ -25,6 +25,7 @@ export interface Me {
   displayName: string;
   email?: string;
   admin: boolean;
+  searchEnabled: boolean;
 }
 
 export interface NodeDto {

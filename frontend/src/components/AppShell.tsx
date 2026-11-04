@@ -81,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link to="/" className={s.brand}>
           NEXORA
         </Link>
-        <form
+        {me.searchEnabled ? <form
           className={s.search}
           onSubmit={(e) => {
             e.preventDefault();
@@ -97,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             style={{ width: "100%", minWidth: 0 }}
             aria-label="Search"
           />
-        </form>
+        </form> : <div className={s.search} />}
         <nav className={s.nav}>
           <NavLink to="/" className={s.navLink} title="Sites">
             <HomeRegular />

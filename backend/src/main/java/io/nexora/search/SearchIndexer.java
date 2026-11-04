@@ -33,6 +33,8 @@ import java.util.function.IntSupplier;
  * the index lane puts a document in the index straight away, findable by name and columns, and the text lane reads
  * its contents and then has it indexed again with them.
  *
+ * <p>While an administrator has search turned off, both lanes stop and changes wait in the queue.
+ *
  * <p>Work is always "make the index match the database now", so repeating it is harmless. That is what makes retries
  * simple, and two servers overlapping would only waste effort.
  */
@@ -49,6 +51,7 @@ public class SearchIndexer {
 
     private final SearchProperties properties;
     private final SearchEngine engine;
+    private final SearchSwitch searchSwitch;
     private final TextExtractor extractor;
     private final SearchQueue queue;
     private final SearchQueueRepository entries;
@@ -63,12 +66,14 @@ public class SearchIndexer {
     private volatile boolean running;
     private volatile boolean indexReady;
 
-    public SearchIndexer(SearchProperties properties, SearchEngine engine, TextExtractor extractor, SearchQueue queue,
+    public SearchIndexer(SearchProperties properties, SearchEngine engine, SearchSwitch searchSwitch,
+                         TextExtractor extractor, SearchQueue queue,
                          SearchQueueRepository entries, SearchTextRepository texts, SearchDocumentBuilder documents,
                          NodeRepository nodes, SitePageRepository pages, BlobStore blobs,
                          PlatformTransactionManager transactions) {
         this.properties = properties;
         this.engine = engine;
+        this.searchSwitch = searchSwitch;
         this.extractor = extractor;
         this.queue = queue;
         this.entries = entries;
@@ -137,6 +142,7 @@ public class SearchIndexer {
     // ---- index lane ----------------------------------------------------------------------------
 
     synchronized int indexStep() {
+        if (!searchSwitch.enabled()) return 0;
         if (!indexReady) {
             if (engine.ensureIndex()) queue.everything();
             indexReady = true;
@@ -277,6 +283,7 @@ public class SearchIndexer {
     // ---- text lane -----------------------------------------------------------------------------
 
     int textStep() {
+        if (!searchSwitch.enabled()) return 0;
         int threads = Math.max(1, properties.extractThreads());
         List<SearchQueueEntry> due = entries.due(List.of(Kind.TEXT), Instant.now(), PageRequest.of(0, threads * 2));
         if (due.isEmpty()) return 0;

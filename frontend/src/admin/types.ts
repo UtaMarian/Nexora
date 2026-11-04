@@ -34,6 +34,7 @@ export interface SearchComponent {
 }
 
 export interface SearchStatus {
+  enabled: boolean;
   engine: SearchComponent;
   extractor: SearchComponent;
   indexing: number;

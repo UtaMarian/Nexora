@@ -39,6 +39,14 @@ public class SearchController {
         return admin.status();
     }
 
+    public record EnabledRequest(boolean enabled) {}
+
+    @PutMapping("/admin/search/enabled")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setEnabled(@RequestBody EnabledRequest body) {
+        admin.setEnabled(CurrentUser.get(), body.enabled());
+    }
+
     @PostMapping("/admin/search/rebuild")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void rebuild() {

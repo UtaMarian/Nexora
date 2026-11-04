@@ -319,6 +319,39 @@ class SearchApiTest extends ApiTestSupport {
     }
 
     @Test
+    void administratorsCanTurnSearchOffAndNothingIsLost() throws Exception {
+        Setup s = setup();
+        String before = word("beforeoff");
+        String during = word("duringoff");
+        uploadDocx(s.owner(), s.lib(), "Before.docx", before);
+        assertThat(names(s.owner(), before)).containsExactly("Before.docx");
+        assertThat(call(s.owner(), get("/api/v1/auth/me"), 200).get("searchEnabled").asBoolean()).isTrue();
+
+        // only administrators may flip it
+        call(s.owner(), jsonBody(put("/api/v1/admin/search/enabled"), Map.of("enabled", false)), 403);
+        call(ADMIN, jsonBody(put("/api/v1/admin/search/enabled"), Map.of("enabled", false)), 204);
+        try {
+            assertThat(call(s.owner(), get("/api/v1/auth/me"), 200).get("searchEnabled").asBoolean()).isFalse();
+            assertThat(call(s.owner(), get("/api/v1/search").param("q", before), 503).get("code").asText()).isEqualTo("search_disabled");
+            call(ADMIN, get("/api/v1/search").param("q", before), 503);
+            call(ADMIN, post("/api/v1/admin/search/rebuild"), 503);
+            assertThat(call(ADMIN, get("/api/v1/admin/search"), 200).get("enabled").asBoolean()).isFalse();
+            assertThat(call(ADMIN, get("/api/v1/admin/health"), 200).toString()).contains("DISABLED");
+
+            // documents still work, and the change waits instead of being indexed
+            UUID file = id(uploadDocx(s.owner(), s.lib(), "During.docx", during));
+            assertThat(download(s.owner(), file)).isNotEmpty();
+            indexer.drain();
+            assertThat(call(ADMIN, get("/api/v1/admin/search"), 200).get("indexing").asLong()).isPositive();
+        } finally {
+            call(ADMIN, jsonBody(put("/api/v1/admin/search/enabled"), Map.of("enabled", true)), 204);
+        }
+
+        assertThat(names(s.owner(), during)).containsExactly("During.docx");
+        assertThat(names(s.owner(), before)).containsExactly("Before.docx");
+    }
+
+    @Test
     void aDamagedFileIsListedForAdministratorsButStillFoundByName() throws Exception {
         Setup s = setup();
         String name = word("broken") + ".docx";

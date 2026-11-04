@@ -66,7 +66,18 @@ To turn OCR off, set `"text-recognizers": []` in `deploy/tika/tika-config.json` 
 
 ## Administration
 
-**Central Administration → Search** shows the health of both services, the work waiting, and each document that could
+**The switch at the top of Central Administration → Search turns search on or off for everyone**, and takes effect at
+once on all servers. While it is off:
+
+- the search box disappears and `/api/v1/search` answers 503 with the code `search_disabled`;
+- indexing and OCR pause, and changes wait in the queue;
+- rebuilding and retrying are unavailable.
+
+Turning it back on works through the queue, so nothing is lost. Results may lag until it finishes. The switch does not
+stop the `opensearch` and `tika` containers. To free their memory as well, run `docker compose stop opensearch tika`, and
+start them again before turning search on.
+
+The same page also shows the health of both services, the work waiting, and each document that could
 not be read and why. Those documents can still be found by name and column values.
 
 - **Rebuild index** empties the index and fills it from the database. Search shows partial results until it finishes.

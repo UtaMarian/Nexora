@@ -45,6 +45,7 @@ public class SearchService {
     public record Response(long total, List<Hit> hits, Map<String, List<FacetValue>> facets, boolean degraded) {}
 
     private final SearchEngine engine;
+    private final SearchSwitch searchSwitch;
     private final PermissionService permissions;
     private final ContentService content;
     private final NodeRepository nodes;
@@ -52,9 +53,11 @@ public class SearchService {
     private final PageService pageService;
     private final PrincipalRepository principals;
 
-    public SearchService(SearchEngine engine, PermissionService permissions, ContentService content, NodeRepository nodes,
+    public SearchService(SearchEngine engine, SearchSwitch searchSwitch, PermissionService permissions,
+                         ContentService content, NodeRepository nodes,
                          SitePageRepository pages, PageService pageService, PrincipalRepository principals) {
         this.engine = engine;
+        this.searchSwitch = searchSwitch;
         this.permissions = permissions;
         this.content = content;
         this.nodes = nodes;
@@ -64,6 +67,7 @@ public class SearchService {
     }
 
     public Response search(CurrentUser user, String q, SearchQuery.Filters filters, SearchQuery.Sort sort, int page, int size) {
+        searchSwitch.requireEnabled();
         int from = Math.min(Math.max(page, 0) * size, MAX_WINDOW - size);
         SearchQuery query = SearchQuery.parse(q, filters, sort, from, size);
         if (query.isEmpty()) return new Response(0, List.of(), Map.of(), false);

@@ -27,7 +27,7 @@ public final class Dtos {
         }
     }
 
-    public record Me(UUID id, String login, String displayName, String email, boolean admin) {}
+    public record Me(UUID id, String login, String displayName, String email, boolean admin, boolean searchEnabled) {}
 
     public record LoginRequest(@NotBlank String login, @NotBlank String password) {}
 

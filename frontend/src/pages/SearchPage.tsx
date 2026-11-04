@@ -5,10 +5,11 @@ import {
   Button, Card, Dropdown, MessageBar, MessageBarBody, Option, Text, makeStyles, mergeClasses, tokens,
 } from "@fluentui/react-components";
 import { DismissRegular, NewsRegular, DocumentOnePageRegular } from "@fluentui/react-icons";
-import { api, routeFor } from "../api/client";
+import { ApiError, api, routeFor } from "../api/client";
 import type { Kind, SearchFacetValue, SearchHit, SearchResponse } from "../api/types";
 import { FileIcon } from "../components/FileIcon";
 import { Empty, ErrorBar, Loading } from "../components/States";
+import { useMe } from "../components/me";
 import { formatRelative, formatSize } from "../components/format";
 
 const PAGE_SIZE = 20;
@@ -88,6 +89,7 @@ function Result({ hit }: { hit: SearchHit }) {
 
 export function SearchPage() {
   const s = useStyles();
+  const me = useMe();
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const sort = params.get("sort") === "modified" ? "modified" : "relevance";
@@ -103,8 +105,13 @@ export function SearchPage() {
       filters.forEach(([key, value]) => query.append(key, value));
       return api<SearchResponse>(`/api/v1/search?${query}`);
     },
-    enabled: active,
+    enabled: active && me.searchEnabled,
   });
+
+  // the error covers a tab opened before an administrator turned search off
+  if (!me.searchEnabled || (results.error instanceof ApiError && results.error.code === "search_disabled")) {
+    return <Empty title="Search is turned off"><Text>An administrator has turned search off.</Text></Empty>;
+  }
 
   const first = results.data?.pages[0];
   const hits = results.data?.pages.flatMap((p) => p.hits) ?? [];
