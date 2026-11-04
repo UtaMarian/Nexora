@@ -14,6 +14,7 @@ import io.nexora.identity.sso.DirectorySyncService;
 import io.nexora.office.WopiDiscovery;
 import io.nexora.portal.PortalService;
 import io.nexora.portal.SiteTemplate;
+import io.nexora.search.SearchAdminService;
 import io.nexora.storage.BlobStore;
 import io.nexora.storage.StorageProperties;
 import jakarta.persistence.EntityManager;
@@ -47,13 +48,14 @@ public class FarmService {
     private final BackupService backups;
     private final JobService jobs;
     private final AuditService audit;
+    private final SearchAdminService search;
     private final Environment env;
 
     public FarmService(EntityManager em, DataSource dataSource, BlobStore store, StorageProperties storage,
                        ObjectProvider<WopiDiscovery> office, ObjectProvider<DirectorySyncService> directory,
                        NodeRepository nodes, PrincipalRepository principals, GroupMemberRepository members,
                        ContentService content, PortalService portal, BackupService backups, JobService jobs,
-                       AuditService audit, Environment env) {
+                       AuditService audit, SearchAdminService search, Environment env) {
         this.em = em;
         this.dataSource = dataSource;
         this.store = store;
@@ -68,6 +70,7 @@ public class FarmService {
         this.backups = backups;
         this.jobs = jobs;
         this.audit = audit;
+        this.search = search;
         this.env = env;
     }
 
@@ -136,6 +139,10 @@ public class FarmService {
             out.add(new Health("Office Online (Collabora)", wopi.available() ? "OK" : "WARNING",
                     wopi.available() ? "Editor discovery loaded" : "The editor is not reachable"));
         }
+        SearchAdminService.Component index = search.engine();
+        out.add(new Health("Search index", index.ok() ? "OK" : "ERROR", index.name() + ": " + index.detail()));
+        SearchAdminService.Component reader = search.extractor();
+        out.add(new Health("Document reading", reader.ok() ? "OK" : "WARNING", reader.name() + ": " + reader.detail()));
         DirectorySyncService sync = directory.getIfAvailable();
         if (sync == null || !sync.enabled()) {
             out.add(new Health("Directory sync", "DISABLED", "Single sign-on directory sync is off"));

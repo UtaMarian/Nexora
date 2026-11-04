@@ -13,6 +13,11 @@ nexora:
     discovery-url: http://127.0.0.1:9/hosting/discovery   # nothing listens here: editor "unavailable"
     wopi-host-url: http://nexora.test
     token-secret: test-secret
+  search:
+    engine: lucene
+    worker-enabled: false   # SearchTest drains the queue itself
+    lucene:
+      path: ""              # in memory
   bootstrap:
     admin-login: admin
     admin-password: admin-test-pw

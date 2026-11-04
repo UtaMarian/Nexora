@@ -27,6 +27,21 @@ export interface Health {
   detail?: string;
 }
 
+export interface SearchComponent {
+  name: string;
+  ok: boolean;
+  detail?: string;
+}
+
+export interface SearchStatus {
+  engine: SearchComponent;
+  extractor: SearchComponent;
+  indexing: number;
+  reading: number;
+  documents: Record<"OK" | "EMPTY" | "REJECTED" | "FAILED", number>;
+  unread: { path: string; status: string; detail?: string; extractedAt: string }[];
+}
+
 export interface Overview {
   counts: Record<string, number>;
   storedBytes: number;

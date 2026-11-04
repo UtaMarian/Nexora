@@ -1,5 +1,6 @@
 package io.nexora.content;
 
+import io.nexora.search.SearchTextRepository;
 import io.nexora.storage.BlobStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,11 +23,14 @@ public class BlobGarbageCollector {
     private final BlobStore store;
     private final FileVersionRepository versions;
     private final NodeRepository nodes;
+    private final SearchTextRepository searchText;
 
-    public BlobGarbageCollector(BlobStore store, FileVersionRepository versions, NodeRepository nodes) {
+    public BlobGarbageCollector(BlobStore store, FileVersionRepository versions, NodeRepository nodes,
+                                SearchTextRepository searchText) {
         this.store = store;
         this.versions = versions;
         this.nodes = nodes;
+        this.searchText = searchText;
     }
 
     public void deleteIfOrphanedAfterCommit(Collection<String> keys) {
@@ -49,6 +53,7 @@ public class BlobGarbageCollector {
         for (String key : keys) {
             try {
                 if (versions.countByStorageKey(key) == 0 && nodes.countByWorkingStorageKey(key) == 0) {
+                    searchText.forget(key); // a purged document must not live on as extracted text
                     store.delete(key);
                 }
             } catch (Exception e) {

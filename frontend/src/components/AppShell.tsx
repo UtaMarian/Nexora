@@ -38,7 +38,7 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase400,
     letterSpacing: "0.08em",
   },
-  search: { flex: 1, maxWidth: "560px", marginLeft: "auto", marginRight: "auto" },
+  search: { flex: 1, minWidth: 0, maxWidth: "560px", marginLeft: "auto", marginRight: "auto" },
   nav: { display: "flex", gap: "4px" },
   navLink: {
     color: tokens.colorNeutralForegroundOnBrand,
@@ -92,9 +92,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             value={q}
             onChange={(_, d) => setQ(d.value)}
             contentBefore={<SearchRegular />}
-            placeholder="Search files, folders and libraries"
+            placeholder="Search documents, lists and pages"
             appearance="filled-lighter"
-            style={{ width: "100%" }}
+            style={{ width: "100%", minWidth: 0 }}
             aria-label="Search"
           />
         </form>

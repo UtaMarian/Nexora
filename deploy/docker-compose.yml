@@ -1,5 +1,6 @@
 # NEXORA single-host install over HTTPS: PostgreSQL, S3 object storage (SeaweedFS), Keycloak (sign-in, AD/LDAP,
-# Kerberos, ADFS), Collabora Online (browser Office editing), API server and web app.
+# Kerberos, ADFS), Collabora Online (browser Office editing), OpenSearch and Apache Tika (full-text search and OCR),
+# API server and web app.
 #
 #   cp .env.example .env              # set real passwords and your host name
 #   ./scripts/make-dev-certs.sh       # or put your own tls.crt / tls.key in ./certs
@@ -163,6 +164,38 @@ services:
     ports:
       - "127.0.0.1:9980:9980"   # for a backend run outside Docker (development) only
 
+  # ---- search ------------------------------------------------------------------------------------------------
+
+  # Full-text index. It only holds copies, so losing this volume costs a rebuild, not data. No port is published:
+  # the security plugin is off and the Compose network is its boundary.
+  opensearch:
+    image: opensearchproject/opensearch:3.9.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms${NEXORA_OPENSEARCH_HEAP:-1g} -Xmx${NEXORA_OPENSEARCH_HEAP:-1g}
+    volumes:
+      - search-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Reads PDF and Office files and runs OCR. It handles untrusted files, so it runs apart from the API, with a
+  # memory limit. Languages: put the main one first, for example ron+eng, and see docs/search.md.
+  tika:
+    build: ./tika
+    image: nexora/tika:local
+    restart: unless-stopped
+    command: ["-c", "/opt/tika-config.json"]
+    environment:
+      NEXORA_OCR_LANGUAGES: ${NEXORA_OCR_LANGUAGES:-eng}
+    mem_limit: ${NEXORA_TIKA_MEMORY:-4g}
+
   # ---- NEXORA --------------------------------------------------------------------------------------------------
 
   backend:
@@ -176,6 +209,8 @@ services:
       s3: { condition: service_healthy }
       keycloak-provision: { condition: service_completed_successfully }
       collabora: { condition: service_started }
+      opensearch: { condition: service_started }
+      tika: { condition: service_started }
     environment:
       NEXORA_DB_URL: jdbc:postgresql://db:5432/nexora
       NEXORA_DB_USER: nexora
@@ -195,6 +230,9 @@ services:
       # desktop Office sign-in: basic (Windows prompt) or forms (MS-OFBA window with single sign-on)
       NEXORA_OFFICE_SIGN_IN: ${NEXORA_OFFICE_SIGN_IN:-basic}
       NEXORA_BACKUP_DIR: /var/lib/nexora/backups
+      NEXORA_SEARCH_ENGINE: opensearch
+      NEXORA_OPENSEARCH_URL: http://opensearch:9200
+      NEXORA_TIKA_URL: http://tika:9998
       NEXORA_ADMIN_SECRET: ${NEXORA_ADMIN_SECRET:-}
       # troubleshooting sign-in: NEXORA_SECURITY_LOG=DEBUG
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${NEXORA_SECURITY_LOG:-INFO}
@@ -234,3 +272,4 @@ volumes:
   db-data:
   blob-data:
   keycloak-data:
+  search-data:

@@ -127,6 +127,40 @@ and OPTIONS is anonymous so clients can discover DAV support.
   *alias* (the real document stays put and is hidden from that user's listings). The second rename becomes a
   new version of the same document, so history, permissions and links survive.
 
+## Search
+
+```
+any change ─ same transaction ─▶ search_queue ──▶ index lane ──▶ OpenSearch / Lucene
+                                                     │  ▲
+                                                 needs text
+                                                     ▼  │
+                                                 text lane ──▶ Tika ──▶ search_text
+```
+
+- **Change capture.** `AuditService` already sees every write in the writer's transaction, including bulk subtree
+  updates that never touch a JPA entity, so it feeds `SearchQueue`. A rollback leaves no work, and a crash loses none.
+  Writes without an audit event (title edits, page publishing, each purged node) enqueue directly.
+- **Rows mean "make the index match the database now".** They carry no data, so repeats are harmless and order does
+  not matter. The worker coalesces them and retries by leaving them in place.
+- **Two lanes.** Reading can take minutes, so the index lane indexes a document at once without its text, and the text
+  lane queues it again when the text is ready.
+- **Text is stored by blob** in `search_text`. Rebuilding the index never repeats OCR, and identical files are read once.
+  The blob collector deletes the text with the blob, so a purged document leaves nothing behind.
+- **Tika runs in its own container** with a memory limit, because it parses untrusted files.
+- **Drafts stay out.** The index sees the current version and the published page only, never a checked-out working copy
+  or a page draft.
+
+Security is enforced twice:
+
+1. Each document stores `aclSource`, the node whose ACL governs it. At query time the engine filters by the ACL sources
+   the caller is on, which keeps counts and facets honest. A grant or revoke therefore applies to the next query with
+   no reindexing. Only moves and inheritance changes reindex, because they change `aclSource`.
+2. Every hit is then checked against the database through `PermissionService`, so an index that is behind cannot show
+   anything. Result details also come from the database; the index decides what matches, not what is displayed.
+
+Snippets mark matches with private-use characters, and the API returns them as segments, so no HTML ever reaches the
+page. If the engine is down, `SearchService` falls back to the old name match and sets `degraded`.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses
@@ -147,7 +181,6 @@ in the service layer only.
   security ("users see only their own items") is not implemented.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.
-- Search matches names and titles only, until the OpenSearch module lands.
 - Draft visibility for minor versions (SharePoint's "who can see drafts") is not implemented: readers see
   the latest version, published or not.
 - New files in "require check-out" libraries are not left checked out to the uploader.

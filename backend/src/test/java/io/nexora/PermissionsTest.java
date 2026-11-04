@@ -77,7 +77,7 @@ class PermissionsTest extends ApiTestSupport {
         assertThat(visible).extracting(n -> n.get("name").asText()).containsExactly("Handbook");
         call(visitor, get("/api/v1/nodes/{id}", payroll), 404);
         call(visitor, get("/api/v1/nodes/{id}/content", payroll), 404);
-        assertThat(call(visitor, get("/api/v1/search").param("q", "payroll"), 200)).isEmpty();
+        assertThat(call(visitor, get("/api/v1/search").param("q", "payroll"), 200).get("hits")).isEmpty();
 
         // the auditor has a direct grant
         assertThat(download(auditor, payroll)).isEqualTo("a,b");

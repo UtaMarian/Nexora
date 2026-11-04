@@ -10,6 +10,7 @@ import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
 import io.nexora.identity.Principal;
 import io.nexora.identity.PrincipalRepository;
+import io.nexora.search.SearchQueue;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -37,14 +38,16 @@ public class ContentService {
     private final AuditService audit;
     private final BlobGarbageCollector gc;
     private final EditLockService editLocks;
+    private final SearchQueue search;
     private final boolean selfServiceSites;
 
     public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                           PrincipalRepository principals, GroupMemberRepository members,
                           PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
-                          EditLockService editLocks,
+                          EditLockService editLocks, SearchQueue search,
                           @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
         this.editLocks = editLocks;
+        this.search = search;
         this.nodes = nodes;
         this.versions = versions;
         this.columns = columns;
@@ -317,6 +320,7 @@ public class ContentService {
             audit.record(user, "METADATA_UPDATE", node, Map.of("fields", new ArrayList<>(metadataPatch.keySet())));
         }
         node.touch(user.id());
+        search.node(node.getId()); // title and description changes have no audit event of their own
         return node;
     }
 
@@ -417,6 +421,7 @@ public class ContentService {
             columns.deleteAll(columns.findByLibraryIdOrderByPosition(n.getId()));
             nodes.delete(n);
             nodes.flush();
+            search.node(n.getId());
         }
         // a purged site frees its URL, so its Owners, Members and Visitors groups go too
         if (root.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(root.getId()));

@@ -102,15 +102,6 @@ public class NodeController {
     public void deleteColumn(@PathVariable UUID id, @PathVariable UUID columnId) {
         content.deleteColumn(CurrentUser.get(), id, columnId);
     }
-
-    // ---- search (name/title match until the OpenSearch module lands) ----
-
-    @GetMapping("/search")
-    public List<NodeDto> search(@RequestParam String q, @RequestParam(defaultValue = "50") int limit) {
-        CurrentUser user = CurrentUser.get();
-        return mapper.many(user, content.search(user, q, Math.min(Math.max(limit, 1), 200)));
-    }
-
     private NodeDetail detail(CurrentUser user, Node node) {
         List<Crumb> crumbs = content.ancestry(node).stream()
                 .map(n -> new Crumb(n.getId(), n.getKind(), n.getName(), n.getTitle(), n.getPath()))

@@ -23,6 +23,7 @@ import { SitesAdminPage } from "./admin/SitesAdminPage";
 import { BackupsPage } from "./admin/BackupsPage";
 import { MigrationPage } from "./admin/MigrationPage";
 import { JobsPage } from "./admin/JobsPage";
+import { SearchAdminPage } from "./admin/SearchAdminPage";
 import { LogsPage } from "./admin/LogsPage";
 import { UsersPage } from "./admin/UsersPage";
 import { SettingsPage } from "./admin/SettingsPage";
@@ -82,6 +83,7 @@ export function App() {
             <Route path="sites" element={<SitesAdminPage />} />
             <Route path="backups" element={<BackupsPage />} />
             <Route path="migration" element={<MigrationPage />} />
+            <Route path="search" element={<SearchAdminPage />} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="logs" element={<LogsPage />} />
             <Route path="audit" element={<AuditPage />} />

@@ -167,6 +167,35 @@ export interface DesignResponse {
 // ---- modern pages (backend: io.nexora.pages) ----
 
 export type PageKind = "PAGE" | "NEWS";
+
+export interface SearchHit {
+  id: string;
+  kind: Kind | PageKind;
+  title: string;
+  name: string;
+  path: string;
+  siteTitle?: string;
+  /** Pieces of text; the ones with match set are the words that were found. Never contains HTML. */
+  snippet: { text: string; match: boolean }[];
+  modifiedAt: string;
+  modifiedBy?: string;
+  sizeBytes?: number;
+  mimeType?: string;
+}
+
+export interface SearchFacetValue {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface SearchResponse {
+  total: number;
+  hits: SearchHit[];
+  facets: Record<string, SearchFacetValue[]>;
+  /** The search engine is down: these are name matches only. */
+  degraded: boolean;
+}
 export type SectionLayout = "one" | "two" | "three" | "oneThirdLeft" | "oneThirdRight";
 export type SectionBackground = "none" | "soft" | "strong";
 export type WebPartType = "text" | "image" | "documents" | "list" | "news";

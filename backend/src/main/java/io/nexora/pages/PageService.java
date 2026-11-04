@@ -11,6 +11,7 @@ import io.nexora.content.LibrarySettings;
 import io.nexora.content.Node;
 import io.nexora.content.NodeRepository;
 import io.nexora.identity.CurrentUser;
+import io.nexora.search.SearchQueue;
 import io.nexora.portal.PortalService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -55,11 +56,12 @@ public class PageService {
     private final SitePageRepository pages;
     private final SitePageVersionRepository versions;
     private final AuditService audit;
+    private final SearchQueue search;
     private final ObjectMapper json;
 
     public PageService(ContentService content, DocumentService documents, NodeRepository nodes,
                        PermissionService permissions, SitePageRepository pages, SitePageVersionRepository versions,
-                       AuditService audit, ObjectMapper json) {
+                       AuditService audit, SearchQueue search, ObjectMapper json) {
         this.content = content;
         this.documents = documents;
         this.nodes = nodes;
@@ -67,6 +69,7 @@ public class PageService {
         this.pages = pages;
         this.versions = versions;
         this.audit = audit;
+        this.search = search;
         this.json = json;
     }
 
@@ -196,6 +199,7 @@ public class PageService {
         if (!page.hasDraft()) throw ApiException.conflict("nothing_to_publish", "There are no changes to publish");
         page.publish(user.id());
         versions.save(SitePageVersion.of(page));
+        search.page(page.getId());
         audit.record(user, page.getKind() == SitePage.Kind.NEWS ? "NEWS_PUBLISH" : "PAGE_PUBLISH", siteOf(page),
                 Map.of("page", page.getName(), "version", page.getPublishedVersion()));
         return page;
@@ -227,6 +231,7 @@ public class PageService {
         permissions.require(user, site, Right.DELETE_ITEMS);
         if (homePageId(site).filter(page.getId()::equals).isPresent()) setHomeSetting(site, null);
         pages.delete(page);
+        search.page(page.getId());
         audit.record(user, page.getKind() == SitePage.Kind.NEWS ? "NEWS_DELETE" : "PAGE_DELETE", site,
                 Map.of("page", page.getName()));
     }

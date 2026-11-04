@@ -8,6 +8,7 @@ import io.nexora.admin.JobService;
 import io.nexora.audit.AuditService;
 import io.nexora.content.*;
 import io.nexora.identity.CurrentUser;
+import io.nexora.search.SearchQueue;
 import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
 import io.nexora.identity.Principal;
@@ -57,11 +58,12 @@ public class MigrationEngine {
     private final BlobStore store;
     private final MigrationItemRepository items;
     private final AuditService audit;
+    private final SearchQueue search;
     private final TransactionTemplate tx;
 
     public MigrationEngine(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                            AclEntryRepository acl, PrincipalRepository principals, GroupMemberRepository members,
-                           PortalService portal, BlobStore store, MigrationItemRepository items, AuditService audit,
+                           PortalService portal, BlobStore store, MigrationItemRepository items, AuditService audit, SearchQueue search,
                            PlatformTransactionManager txManager) {
         this.nodes = nodes;
         this.versions = versions;
@@ -73,6 +75,7 @@ public class MigrationEngine {
         this.store = store;
         this.items = items;
         this.audit = audit;
+        this.search = search;
         this.tx = new TransactionTemplate(txManager);
     }
 
@@ -226,7 +229,16 @@ public class MigrationEngine {
         JsonNode web = sp.json(sp.web(task.getSourceWeb(), "/_api/web?$select=Id,Title,Description,ServerRelativeUrl,Created"));
         run.site = tx.execute(s -> ensureSite(run, web));
         ctx.log("Target site: " + run.site.getPath());
+        try {
+            return transfer(sp, task, options, actor, ctx, run);
+        } finally {
+            // also after a failed or cancelled run: whatever was copied should be searchable
+            tx.executeWithoutResult(s -> search.subtree(run.site.getId()));
+        }
+    }
 
+    private Stats transfer(SharePointClient sp, MigrationTask task, Options options, CurrentUser actor,
+                           JobService.Context ctx, Run run) throws IOException {
         if (options.permissions()) run.guarded("site permissions", () -> sitePermissions(run));
 
         List<JsonNode> all = lists(sp, task.getSourceWeb());

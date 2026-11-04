@@ -102,6 +102,11 @@ public class PermissionService {
         return result;
     }
 
+    /** The ACL sources the user is on: what search filters by, so a grant or revoke applies to the next query. */
+    public Set<UUID> readableSources(CurrentUser user) {
+        return acl.findNodeIdsByPrincipals(principalIds(user));
+    }
+
     /** Security-trims a list of nodes, keeping order. */
     public List<Node> filterVisible(CurrentUser user, List<Node> candidates) {
         Map<UUID, PermissionLevel> levels = levels(user, candidates);
