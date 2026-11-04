@@ -161,6 +161,24 @@ Security is enforced twice:
 Snippets mark matches with private-use characters, and the API returns them as segments, so no HTML ever reaches the
 page. If the engine is down, `SearchService` falls back to the old name match and sets `degraded`.
 
+## Lists, sharing and alerts
+
+See [lists-sharing-alerts.md](lists-sharing-alerts.md) for what these do.
+
+- **Attachments are `FILE` nodes under a `LIST_ITEM`.** They inherit versions, recycle bin, permissions, search and
+  export without any new storage.
+- **Lookup values store `{lookupId, title}`.** `lookupId` is the item's number in its list, not a node id, because
+  numbers survive SharePoint migration and site export while node ids do not. The title is a snapshot for display, kept
+  current when the target item is renamed.
+- **Views live in the list's `settings`**, so they travel with exports. The web app applies them to loaded items.
+- **Sharing with people is an ordinary ACL entry**, so search, WebDAV and everything else already respect it.
+  `share_grant` only remembers who shared what, for *Shared with me*.
+- **Email and alerts follow the same outbox idea as search.** `AuditService` hands changes to `AlertService` in the
+  writer's transaction, and workers do the slow part. Access is checked per recipient at send time.
+- **Link access never reuses the signed-in path.** `LinkAccessService` serves only the current version, and inside a
+  folder it compares ACL sources: a node with its own permissions has a different source from the shared root, so it is
+  unreachable through the link.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses
@@ -177,7 +195,7 @@ in the service layer only.
 - Ghost files and aliases are held in memory per backend node; with several nodes, WebDAV needs sticky sessions.
 - Lists live at `/sites/<site>/<List>`, not SharePoint's `/sites/<site>/Lists/<List>`; the migration
   redirect service maps old list URLs.
-- List views are not saved per list yet (sorting and filtering happen in the browser), and item-level
+- Item-level
   security ("users see only their own items") is not implemented.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.

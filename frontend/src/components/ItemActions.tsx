@@ -15,6 +15,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowDownloadRegular,
+  AlertRegular,
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DeleteRegular,
@@ -29,6 +30,7 @@ import {
   MoreHorizontalRegular,
   OpenRegular,
   PeopleRegular,
+  ShareRegular,
 } from "@fluentui/react-icons";
 import { api, ApiError, contentUrl, routeFor } from "../api/client";
 import type { NodeDto } from "../api/types";
@@ -39,10 +41,12 @@ import { PropertiesDialog } from "../dialogs/PropertiesDialog";
 import { VersionHistoryDialog } from "../dialogs/VersionHistoryDialog";
 import { PermissionsDialog } from "../dialogs/PermissionsDialog";
 import { CheckInDialog } from "../dialogs/CheckInDialog";
+import { ShareDialog } from "../dialogs/ShareDialog";
+import { AlertDialog } from "../dialogs/AlertDialog";
 
 export const TOASTER_ID = "nexora-toaster";
 
-type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | null;
+type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | "share" | "alert" | null;
 
 /** The "…" menu for a file or folder. */
 export function ItemActions(props: {
@@ -139,6 +143,8 @@ export function ItemActions(props: {
                 Open
               </MenuItem>
             )}
+            {can(node, "EDIT_ITEMS") && <MenuItem icon={<ShareRegular />} onClick={() => setDialog("share")}>Share</MenuItem>}
+            <MenuItem icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</MenuItem>
             <MenuItem icon={<InfoRegular />} onClick={() => setDialog("properties")} disabled={!canEdit}>
               Properties
             </MenuItem>
@@ -248,6 +254,8 @@ export function ItemActions(props: {
       )}
       {dialog === "versions" && <VersionHistoryDialog file={node} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "share" && <ShareDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "alert" && <AlertDialog node={node} onClose={() => setDialog(null)} />}
       {dialog === "checkin" && (
         <CheckInDialog file={node} minorVersions={props.minorVersions} onClose={() => setDialog(null)} />
       )}

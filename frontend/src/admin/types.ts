@@ -1,5 +1,5 @@
 // Mirrors the Central Administration API (backend: io.nexora.admin, io.nexora.migration).
-import type { PrincipalRef } from "../api/types";
+import type { PrincipalRef, ShareLinkDto } from "../api/types";
 
 export type JobStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 
@@ -25,6 +25,14 @@ export interface Health {
   component: string;
   status: "OK" | "WARNING" | "ERROR" | "DISABLED";
   detail?: string;
+}
+
+export interface SharingPolicy {
+  anyoneLinksAllowed: boolean;
+  maxLinkDays: number;
+  mail: { enabled: boolean; server: string; waiting: number; failed: number };
+  mailProblem?: string;
+  links: ShareLinkDto[];
 }
 
 export interface SearchComponent {

@@ -102,6 +102,10 @@
             <version>1.21.1</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <!-- embedded search engine for development and small installs; production uses OpenSearch -->
         <dependency>
             <groupId>org.apache.lucene</groupId>

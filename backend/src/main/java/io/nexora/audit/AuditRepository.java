@@ -19,4 +19,12 @@ public interface AuditRepository extends JpaRepository<AuditEvent, UUID> {
             """)
     Page<AuditEvent> search(@Param("siteId") UUID siteId, @Param("nodeId") UUID nodeId,
                             @Param("actorId") UUID actorId, Pageable page);
+
+    /** The items someone touched most recently: node id and when. */
+    @Query("""
+            select e.nodeId, max(e.occurredAt) from AuditEvent e
+            where e.actorId = :actorId and e.action in :actions and e.nodeId is not null
+            group by e.nodeId order by max(e.occurredAt) desc
+            """)
+    java.util.List<Object[]> recentNodes(@Param("actorId") UUID actorId, @Param("actions") java.util.Collection<String> actions, Pageable page);
 }

@@ -87,7 +87,7 @@ export interface LibrarySettings {
   maxVersions?: number | null;
 }
 
-export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON";
+export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON" | "LOOKUP";
 
 export interface ColumnDto {
   id: string;
@@ -96,6 +96,7 @@ export interface ColumnDto {
   type: ColumnType;
   required: boolean;
   choices: string[];
+  lookupListId?: string;
 }
 
 export interface AclEntry {
@@ -168,6 +169,68 @@ export interface DesignResponse {
 // ---- modern pages (backend: io.nexora.pages) ----
 
 export type PageKind = "PAGE" | "NEWS";
+
+export type ListViewType = "table" | "calendar" | "gallery";
+
+export interface ListViewFilter {
+  column: string;
+  operator: "eq" | "ne" | "contains" | "gt" | "lt" | "empty" | "notEmpty";
+  value?: string;
+}
+
+export interface ListView {
+  id: string;
+  name: string;
+  type: ListViewType;
+  columns: string[];
+  sortBy?: string | null;
+  sortDescending: boolean;
+  filters: ListViewFilter[];
+  dateColumn?: string | null;
+  endColumn?: string | null;
+  isDefault: boolean;
+}
+
+export interface ItemVersion {
+  version: number;
+  current: boolean;
+  title: string;
+  values?: Record<string, unknown>;
+  createdBy?: PrincipalRef;
+  createdAt: string;
+}
+
+export type AlertFrequency = "IMMEDIATE" | "DAILY" | "WEEKLY";
+
+export interface AlertDto {
+  id: string;
+  nodeId: string;
+  title: string;
+  path: string;
+  kind: Kind;
+  frequency: AlertFrequency;
+  createdAt: string;
+}
+
+export interface ShareLinkDto {
+  id: string;
+  scope: "ANYONE" | "ORGANIZATION";
+  expiresAt: string;
+  hasPassword: boolean;
+  useCount: number;
+  lastUsedAt?: string;
+  createdBy: PrincipalRef;
+  createdAt: string;
+  path?: string;
+}
+
+export interface SharesDto {
+  links: ShareLinkDto[];
+  people: { id: string; principal: PrincipalRef; level: string; sharedBy: PrincipalRef; sharedAt: string }[];
+  anyoneLinksAllowed: boolean;
+  maxLinkDays: number;
+  emailEnabled: boolean;
+}
 
 export interface SearchHit {
   id: string;

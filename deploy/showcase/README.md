@@ -37,4 +37,9 @@ Things to try:
 - See the version history of the Health and Safety Policy, with a 1.1 draft after the published 1.0.
 - Sign in as `sofia.lindqvist` to see unpublished changes on the Safety first page.
 - Open `Highmoor Repowering Project Charter.docx`, checked out by Liam Walsh.
+- Open Events as a calendar, Generation sites as a gallery, and the Open work view of Northern Reach tasks.
+- Choose New in Shared Documents and start from a template.
+- Share a file with a link, and open it in a private window.
+- As `noah.fischer`, open Shared with me.
+- See email at http://localhost:8025.
 - Empty the recycle bin, or restore the file Liam deleted by mistake.

@@ -7,6 +7,8 @@ import io.nexora.acl.AclEntryRepository;
 import io.nexora.acl.PermissionLevel;
 import io.nexora.audit.AuditService;
 import io.nexora.common.ApiException;
+import io.nexora.lists.ItemVersion;
+import io.nexora.lists.ItemVersionRepository;
 import io.nexora.content.*;
 import io.nexora.identity.CurrentUser;
 import io.nexora.identity.GroupMember;
@@ -55,13 +57,15 @@ public class SiteTransferService {
     private final ContentService content;
     private final BlobStore store;
     private final AuditService audit;
+    private final ItemVersionRepository itemVersions;
     private final ObjectMapper json;
 
     public SiteTransferService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                                AclEntryRepository acl, PrincipalRepository principals, GroupMemberRepository members,
                                SitePageRepository pages, SitePageVersionRepository pageVersions,
                                SiteAssetRepository assets, ContentService content, BlobStore store,
-                               AuditService audit, ObjectMapper json) {
+                               AuditService audit, ItemVersionRepository itemVersions, ObjectMapper json) {
+        this.itemVersions = itemVersions;
         this.nodes = nodes;
         this.versions = versions;
         this.columns = columns;
@@ -102,6 +106,13 @@ public class SiteTransferService {
         people.add(site.getCreatedBy());
         tree.forEach(n -> { people.add(n.getCreatedBy()); people.add(n.getModifiedBy()); });
         history.values().forEach(l -> l.forEach(v -> people.add(v.getCreatedBy())));
+        Map<UUID, List<ItemVersion>> itemHistory = new HashMap<>();
+        for (List<UUID> chunk : chunks(ids)) {
+            for (ItemVersion v : itemVersions.findByItemIdIn(chunk)) {
+                itemHistory.computeIfAbsent(v.getItemId(), k -> new ArrayList<>()).add(v);
+                people.add(v.getCreatedBy());
+            }
+        }
         List<AclEntry> entries = new ArrayList<>(acl.findByNodeId(site.getId()));
         for (Node n : tree) if (!n.isInheritsPermissions()) entries.addAll(acl.findByNodeId(n.getId()));
         entries.forEach(e -> people.add(e.getPrincipalId()));
@@ -142,11 +153,13 @@ public class SiteTransferService {
             versionCount += vr.size();
             nodeRecs.add(new SitePackage.NodeRec(n.getId(), n.getParentId(), n.getKind().name(), n.getName(), n.getTitle(),
                     n.getDescription(), n.getMetadata(), n.getSettings(), n.isInheritsPermissions(),
-                    ref.apply(n.getCreatedBy()), n.getCreatedAt(), ref.apply(n.getModifiedBy()), n.getModifiedAt(), vr));
+                    ref.apply(n.getCreatedBy()), n.getCreatedAt(), ref.apply(n.getModifiedBy()), n.getModifiedAt(), vr,
+                    itemHistory.getOrDefault(n.getId(), List.of()).stream().map(v -> new SitePackage.ItemVersionRec(v.getVersion(), v.getTitle(),
+                            v.getMetadata(), ref.apply(v.getCreatedBy()), v.getCreatedAt())).toList()));
             if (n.getKind().hasColumns()) {
                 for (ColumnDef c : columns.findByLibraryIdOrderByPosition(n.getId())) {
                     columnRecs.add(new SitePackage.ColumnRec(n.getId(), c.getInternalName(), c.getDisplayName(),
-                            c.getType().name(), c.isRequired(), c.getChoices(), c.getPosition()));
+                            c.getType().name(), c.isRequired(), c.getChoices(), c.getPosition(), c.getLookupListId()));
                 }
             }
         }
@@ -292,14 +305,23 @@ public class SiteTransferService {
                     n.setMimeType(last.getMimeType());
                     nodes.save(n);
                 }
+                if (r.itemVersions() != null) {
+                    for (SitePackage.ItemVersionRec v : r.itemVersions()) {
+                        itemVersions.save(new ItemVersion(n.getId(), v.version(), v.title(), people.remapPeople(v.metadata()),
+                                people.id(v.createdBy()), v.createdAt()));
+                    }
+                }
                 if (++count % 500 == 0) log.accept("Restored " + count + " of " + pkg.nodes().size() + " items");
             }
 
             for (SitePackage.ColumnRec c : pkg.columns()) {
                 Node container = created.get(c.containerId());
                 if (container == null) continue;
-                columns.save(new ColumnDef(container.getId(), c.internalName(), c.displayName(),
-                        ColumnDef.Type.valueOf(c.type()), c.required(), c.choices(), c.position()));
+                ColumnDef column = new ColumnDef(container.getId(), c.internalName(), c.displayName(),
+                        ColumnDef.Type.valueOf(c.type()), c.required(), c.choices(), c.position());
+                Node lookupList = c.lookupListId() == null ? null : created.get(c.lookupListId());
+                if (lookupList != null) column.setLookupListId(lookupList.getId());
+                columns.save(column);
             }
 
             // permissions: the package's entries replace the defaults on the site and every broken node

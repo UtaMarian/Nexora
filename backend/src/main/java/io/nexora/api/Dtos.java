@@ -87,15 +87,17 @@ public final class Dtos {
                                      boolean requireCheckout, Integer maxVersions) {}
 
     public record ColumnDto(UUID id, String internalName, String displayName, ColumnDef.Type type,
-                            boolean required, List<String> choices) {
+                            boolean required, List<String> choices, UUID lookupListId) {
         public static ColumnDto of(ColumnDef c) {
             return new ColumnDto(c.getId(), c.getInternalName(), c.getDisplayName(), c.getType(), c.isRequired(),
-                    c.getChoices());
+                    c.getChoices(), c.getLookupListId());
         }
     }
 
     public record CreateColumnRequest(@NotBlank String displayName, @NotNull ColumnDef.Type type, boolean required,
-                                      List<String> choices) {}
+                                      List<String> choices, UUID lookupListId) {}
+
+    public record NewDocumentRequest(io.nexora.content.DocumentService.NewDocument type, String name, UUID templateId) {}
 
     // ---- permissions ----
 

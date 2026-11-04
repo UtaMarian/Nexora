@@ -254,6 +254,28 @@ def main():
                              ("Valea Vântului", {"Technology": "Onshore wind", "Capacity MW": 180, "Country": "Romania", "Operating since": "2019-09-01", "Site manager": LIAM, "Grid ready": True, "Notes": "Best availability in the fleet in 2026"}),
                              ("Ostwall Battery", {"Technology": "Battery", "Capacity MW": 60, "Country": "Germany", "Operating since": "2024-02-01", "Site manager": DANIEL, "Grid ready": True})])
 
+    # saved views, a lookup, attachments and item history
+    ecol, tcol = columns(events), columns(tasks)
+    view = lambda list_id, name, type_, **more: admin.post(f"/nodes/{list_id}/views", {"name": name, "type": type_, "columns": [], "filters": [], **more})
+    view(events, "Calendar", "calendar", dateColumn=ecol["Start time"], endColumn=ecol["End time"], isDefault=True)
+    view(tasks, "Open work", "table", columns=["Title", tcol["Status"], tcol["Priority"], tcol["Assigned to"], tcol["Due date"]],
+         sortBy=tcol["Due date"], filters=[{"column": tcol["Status"], "operator": "ne", "value": "Completed"}], isDefault=True)
+    view(tasks, "Due dates", "calendar", dateColumn=tcol["Due date"])
+    view(register, "Gallery", "gallery", columns=[rc["Technology"], rc["Capacity MW"], rc["Country"]], isDefault=True)
+    view(register, "Offshore and wind", "table", filters=[{"column": rc["Technology"], "operator": "contains", "value": "wind"}], sortBy=rc["Capacity MW"], sortDescending=True)
+
+    photos = {"Highmoor Ridge": "photo-ridge.jpg", "Doggerfeld One": "photo-sea.jpg", "Soleira": "photo-solar.jpg", "Ostwall Battery": "photo-storage.jpg",
+              "Brisa del Sur": "news-dawn.jpg", "Valea Vântului": "news-community.jpg"}
+    rows_by_title = {n["title"]: n["id"] for n in admin.get(f"/nodes/{register}/children")}
+    for title, photo in photos.items():
+        who[DANIEL].upload(rows_by_title[title], IMAGES / photo, "Site photo")
+
+    site_column = admin.post(f"/nodes/{tasks}/columns", {"displayName": "Site", "type": "LOOKUP", "lookupListId": register})["internalName"]
+    doggerfeld = next(n for n in admin.get(f"/nodes/{register}/children") if n["title"] == "Doggerfeld One")["name"]
+    for task in admin.get(f"/nodes/{tasks}/children"):
+        who[LIAM].patch(f"/nodes/{task['id']}", {"metadata": {site_column: doggerfeld}})
+    who[LIAM].upload(admin.get(f"/nodes/{tasks}/children")[0]["id"], FILES / "pdf" / "Blade Inspection Certificate T-117.pdf", "Evidence for the stage gate")
+
     # images for pages
     def pic(name):
         with open(IMAGES / name, "rb") as f:
@@ -327,6 +349,11 @@ def main():
                        {"label": "Safety", "url": page("safety-first")}, {"label": "People", "url": page("people-and-culture")}, {"label": "Sustainability", "url": page("sustainability")},
                        {"label": "Digital", "url": page("digital-and-it")}, {"label": "Policies", "url": f"{ROOT}/Policies"}, {"label": "Documents", "url": f"{ROOT}/Shared Documents"}],
         "home": {"welcomeTitle": "Welcome to Kestrelwind", "welcome": "", "quickLinks": [], "showNews": False, "showLibraries": True, "showLists": True}})
+
+    # sharing and alerts
+    who[ELENA].post(f"/nodes/{files['Code of Conduct.docx']}/share-people", {"principals": [ids[NOAH]], "level": "READ", "message": "Please read this before your first site visit."})
+    who[PRIYA].put(f"/nodes/{policies}/alert", {"frequency": "DAILY"})
+    who[YUKI].put(f"/nodes/{projects}/alert", {"frequency": "IMMEDIATE"})
 
     # something in the recycle bin
     extra = who[LIAM].upload(folders["Operations"], FILES / "policies" / "Flexible Working Policy.docx", "Uploaded here by mistake")

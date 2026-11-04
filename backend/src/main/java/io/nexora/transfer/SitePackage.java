@@ -39,10 +39,12 @@ public record SitePackage(String format, int formatVersion, Instant exportedAt, 
     public record NodeRec(UUID id, UUID parentId, String kind, String name, String title, String description,
                           Map<String, Object> metadata, Map<String, Object> settings, boolean inheritsPermissions,
                           PrincipalRef createdBy, Instant createdAt, PrincipalRef modifiedBy, Instant modifiedAt,
-                          List<VersionRec> versions) {}
+                          List<VersionRec> versions, List<ItemVersionRec> itemVersions) {}
+
+    public record ItemVersionRec(int version, String title, Map<String, Object> metadata, PrincipalRef createdBy, Instant createdAt) {}
 
     public record ColumnRec(UUID containerId, String internalName, String displayName, String type, boolean required,
-                            List<String> choices, int position) {}
+                            List<String> choices, int position, UUID lookupListId) {}
 
     public record AclRec(UUID nodeId, PrincipalRef principal, String level) {}
 

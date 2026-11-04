@@ -115,7 +115,7 @@ public class SearchDocumentBuilder {
         return name.replaceAll("(?<=\\p{Ll})(?=\\p{Lu})", " ").replaceAll("[^\\p{L}\\p{N}]+", " ").strip();
     }
 
-    /** Text of column values. A person column is a snapshot of {id, login, displayName}, and ids are not words. */
+    /** Text of column values. Person and lookup columns are snapshots that hold ids, and ids are not words. */
     static String columnText(Map<String, Object> metadata) {
         StringBuilder b = new StringBuilder();
         collect(metadata, b);
@@ -125,7 +125,7 @@ public class SearchDocumentBuilder {
     private static void collect(Object value, StringBuilder b) {
         if (value instanceof Map<?, ?> m) {
             m.forEach((k, v) -> {
-                if (!"id".equals(k)) collect(v, b);
+                if (!"id".equals(k) && !"lookupId".equals(k)) collect(v, b);
             });
         } else if (value instanceof Collection<?> c) {
             c.forEach(v -> collect(v, b));

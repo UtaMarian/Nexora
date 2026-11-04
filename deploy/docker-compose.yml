@@ -196,6 +196,14 @@ services:
       NEXORA_OCR_LANGUAGES: ${NEXORA_OCR_LANGUAGES:-eng}
     mem_limit: ${NEXORA_TIKA_MEMORY:-4g}
 
+  # Catches all email for testing and shows it at http://localhost:8025. To send real email, point NEXORA_SMTP_HOST
+  # at your mail server in .env and remove this service.
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+
   # ---- NEXORA --------------------------------------------------------------------------------------------------
 
   backend:
@@ -233,6 +241,14 @@ services:
       NEXORA_SEARCH_ENGINE: opensearch
       NEXORA_OPENSEARCH_URL: http://opensearch:9200
       NEXORA_TIKA_URL: http://tika:9998
+      NEXORA_MAIL_ENABLED: ${NEXORA_MAIL_ENABLED:-true}
+      NEXORA_SMTP_HOST: ${NEXORA_SMTP_HOST:-mailpit}
+      NEXORA_SMTP_PORT: ${NEXORA_SMTP_PORT:-1025}
+      NEXORA_SMTP_USER: ${NEXORA_SMTP_USER:-}
+      NEXORA_SMTP_PASSWORD: ${NEXORA_SMTP_PASSWORD:-}
+      NEXORA_SMTP_STARTTLS: ${NEXORA_SMTP_STARTTLS:-false}
+      NEXORA_MAIL_FROM: ${NEXORA_MAIL_FROM:-NEXORA <nexora@nexora.local>}
+      NEXORA_PUBLIC_URL: https://${NEXORA_PUBLIC_HOST:-localhost:8443}
       NEXORA_ADMIN_SECRET: ${NEXORA_ADMIN_SECRET:-}
       # troubleshooting sign-in: NEXORA_SECURITY_LOG=DEBUG
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${NEXORA_SECURITY_LOG:-INFO}

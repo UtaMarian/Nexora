@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Text, makeStyles, tokens } from "@fluentui/react-components";
@@ -29,6 +30,11 @@ export function FileView({ file, breadcrumbs }: { file: NodeDto; breadcrumbs: Cr
   });
   const parent = breadcrumbs[breadcrumbs.length - 2];
   const office = useOffice();
+
+  // puts the file in "Recent"
+  useEffect(() => {
+    void api(`/api/v1/nodes/${file.id}/viewed`, { method: "POST" }).catch(() => undefined);
+  }, [file.id]);
 
   return (
     <>

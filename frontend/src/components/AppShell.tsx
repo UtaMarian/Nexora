@@ -15,7 +15,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { TOASTER_ID } from "./ItemActions";
-import { DeleteRegular, HomeRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
+import { AlertRegular, ClockRegular, DeleteRegular, HomeRegular, PeopleCommunityRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import { useMe } from "./me";
 
@@ -131,6 +131,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Text>
             </div>
             <MenuList>
+              <MenuItem icon={<ClockRegular />} onClick={() => navigate("/recent")}>Recent</MenuItem>
+              <MenuItem icon={<PeopleCommunityRegular />} onClick={() => navigate("/shared")}>Shared with me</MenuItem>
+              <MenuItem icon={<AlertRegular />} onClick={() => navigate("/alerts")}>My alerts</MenuItem>
               <MenuItem icon={<SignOutRegular />} onClick={signOut}>
                 Sign out
               </MenuItem>

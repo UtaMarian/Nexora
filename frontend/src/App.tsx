@@ -24,6 +24,9 @@ import { BackupsPage } from "./admin/BackupsPage";
 import { MigrationPage } from "./admin/MigrationPage";
 import { JobsPage } from "./admin/JobsPage";
 import { SearchAdminPage } from "./admin/SearchAdminPage";
+import { SharingAdminPage } from "./admin/SharingAdminPage";
+import { LinkPage } from "./pages/LinkPage";
+import { MyAlertsPage, RecentPage, SharedWithMePage } from "./pages/MyPages";
 import { LogsPage } from "./admin/LogsPage";
 import { UsersPage } from "./admin/UsersPage";
 import { SettingsPage } from "./admin/SettingsPage";
@@ -60,6 +63,11 @@ export function App() {
     return () => window.removeEventListener("nexora:unauthorized", onUnauthorized);
   }, [qc]);
 
+  // a share link works with or without an account
+  if (window.location.pathname.startsWith("/s/")) {
+    return <Routes><Route path="/s/:token" element={<LinkPage />} /></Routes>;
+  }
+
   if (me.isPending) {
     return <Spinner style={{ marginTop: "30vh" }} label="Loading NEXORA…" />;
   }
@@ -77,6 +85,9 @@ export function App() {
           <Route path="/recycle-bin" element={<RecycleBinPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/recent" element={<RecentPage />} />
+          <Route path="/shared" element={<SharedWithMePage />} />
+          <Route path="/alerts" element={<MyAlertsPage />} />
           <Route path="/office/:id" element={<OfficePage />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<OverviewPage />} />
@@ -84,6 +95,7 @@ export function App() {
             <Route path="backups" element={<BackupsPage />} />
             <Route path="migration" element={<MigrationPage />} />
             <Route path="search" element={<SearchAdminPage />} />
+            <Route path="sharing" element={<SharingAdminPage />} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="logs" element={<LogsPage />} />
             <Route path="audit" element={<AuditPage />} />

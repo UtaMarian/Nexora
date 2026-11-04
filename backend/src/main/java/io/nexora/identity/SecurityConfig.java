@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf", "/api/v1/auth/providers",
                         "/api/v1/auth/ofba/**").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/links/**").permitAll() // checked by LinkAccessService
                 .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

@@ -26,6 +26,9 @@ class FakeSharePoint implements AutoCloseable {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern ITEM_ROLES = Pattern.compile(".*/lists\\(guid'([^']+)'\\)/items\\((\\d+)\\)/roleassignments$");
+    private static final Pattern ATTACHMENTS = Pattern.compile(".*/lists\\(guid'[^']+'\\)/items\\((\\d+)\\)/AttachmentFiles$");
+    private static final String ATTACHMENT_URL = "/sites/hr/Lists/Tasks/Attachments/4/plan.txt";
+    private static final String DEPARTMENTS = "eeeeeeee-0000-0000-0000-000000000009";
     private static final Pattern LIST_PART = Pattern.compile(".*/lists\\(guid'([^']+)'\\)/(fields|items|roleassignments)$");
 
     /** A file, with history. */
@@ -103,6 +106,7 @@ class FakeSharePoint implements AutoCloseable {
         m.put("Created", "2024-01-01T09:00:00Z");
         m.put("Modified", modified);
         m.put("Attachments", id == 4);
+        if (id == 4) m.put("DepartmentId", 12);
         m.put("Author", user(jdoe));
         m.put("Editor", user(msmith));
         return m;
@@ -183,6 +187,8 @@ class FakeSharePoint implements AutoCloseable {
 
         Matcher ir = ITEM_ROLES.matcher(path);
         if (ir.matches()) return value(List.of(ra(member(jdoe), 3)));
+        Matcher at = ATTACHMENTS.matcher(path);
+        if (at.matches()) return value(List.of(Map.of("FileName", "plan.txt", "ServerRelativeUrl", ATTACHMENT_URL)));
         Matcher lp = LIST_PART.matcher(path);
         if (lp.matches()) return listPart(lp.group(1), lp.group(2));
 
@@ -191,6 +197,7 @@ class FakeSharePoint implements AutoCloseable {
             return value(byUrl(u).map(f -> f.history).orElse(new ArrayList<>()));
         }
         if (path.endsWith("/GetFileByServerRelativeUrl(@u)/$value")) {
+            if (ATTACHMENT_URL.equals(u)) return "attached plan".getBytes(StandardCharsets.UTF_8);
             return byUrl(u).map(f -> f.content.getBytes(StandardCharsets.UTF_8)).orElse(null);
         }
         return null;
@@ -200,6 +207,7 @@ class FakeSharePoint implements AutoCloseable {
         return List.of(list(DOCS, "Documents", 101, "Shared Documents", "/sites/hr/Shared Documents", 2, false),
                 list(SECRET, "Secret", 101, "Secret", "/sites/hr/Secret", 1, true),
                 list(TASKS, "Tasks", 107, "Tasks", "/sites/hr/Lists/Tasks", tasks.size(), false),
+                list(DEPARTMENTS, "Departments", 100, "Departments", "/sites/hr/Lists/Departments", 1, false),
                 list(PAGES, "Site Pages", 119, "SitePages", "/sites/hr/SitePages", 3, false));
     }
 
@@ -222,7 +230,9 @@ class FakeSharePoint implements AutoCloseable {
         if (part.equals("fields")) {
             if (id.equals(TASKS)) {
                 return value(List.of(Map.of("InternalName", "TaskStatus", "Title", "Task Status", "TypeAsString", "Choice",
-                        "Required", false, "Choices", List.of("Not started", "In progress"))));
+                        "Required", false, "Choices", List.of("Not started", "In progress")),
+                        Map.of("InternalName", "Department", "Title", "Department", "TypeAsString", "Lookup", "Required", false,
+                                "LookupList", "{" + DEPARTMENTS.toUpperCase(Locale.ROOT) + "}")));
             }
             if (!id.equals(DOCS)) return value(List.of());
             return value(List.of(
@@ -232,6 +242,10 @@ class FakeSharePoint implements AutoCloseable {
                     Map.of("InternalName", "Linked", "Title", "Linked", "TypeAsString", "Lookup", "Required", false)));
         }
         if (id.equals(TASKS)) return value(new ArrayList<>(tasks));
+        if (id.equals(DEPARTMENTS)) {
+            return value(List.of(Map.of("ID", 12, "Title", "Finance", "Created", "2024-01-01T09:00:00Z", "Modified", "2024-01-01T09:00:00Z",
+                    "Attachments", false, "Author", user(jdoe), "Editor", user(jdoe))));
+        }
         List<Map<String, Object>> out = new ArrayList<>();
         for (SpFile f : files.values()) {
             if (id.equals(DOCS) ? f.folder.startsWith("/sites/hr/Shared Documents") : f.folder.startsWith("/sites/hr/Secret")) {

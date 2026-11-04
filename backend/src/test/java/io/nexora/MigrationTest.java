@@ -82,7 +82,7 @@ class MigrationTest extends ApiTestSupport {
             assertThat(t.get("status").asText()).isEqualTo("SCANNED");
             JsonNode scan = t.get("scan");
             assertThat(scan.get("totals").get("libraries").asInt()).isEqualTo(2);
-            assertThat(scan.get("totals").get("lists").asInt()).isEqualTo(1);
+            assertThat(scan.get("totals").get("lists").asInt()).isEqualTo(2);
             assertThat(scan.get("totals").get("files").asInt()).isEqualTo(3);
             assertThat(scan.get("subwebs")).hasSize(1);
             assertThat(scan.get("warnings").toString()).contains("subsite").contains("unsupported");
@@ -104,7 +104,15 @@ class MigrationTest extends ApiTestSupport {
             JsonNode job = copy(task);
             assertThat(job.get("status").asText()).isEqualTo("SUCCEEDED");
             assertThat(job.get("result").get("failed").asInt()).isZero();
-            assertThat(job.get("log").asText()).contains("Column 'Linked' (Lookup)").contains("attachments").contains("ghost");
+            assertThat(job.get("log").asText()).contains("Column 'Linked'").contains("not copied").contains("ghost");
+
+            // a lookup column, resolved although its list was copied after the list using it, and an attachment
+            JsonNode closeBooks = node(base + "/Tasks/4");
+            assertThat(closeBooks.get("metadata").get("Department").get("title").asText()).isEqualTo("Finance");
+            assertThat(closeBooks.get("metadata").get("Department").get("lookupId").asInt()).isEqualTo(12);
+            JsonNode tasksColumns = call(ADMIN, get("/api/v1/nodes/{id}/columns", id(node(base + "/Tasks"))), 200);
+            assertThat(tasksColumns.findValuesAsText("lookupListId")).contains(id(node(base + "/Departments")).toString());
+            assertThat(download(ADMIN, id(node(base + "/Tasks/4/plan.txt")))).isEqualTo("attached plan");
 
             // the file, with its whole history, labels, authors, dates and comments
             JsonNode report = node(base + "/Shared Documents/Report.docx");

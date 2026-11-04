@@ -12,6 +12,7 @@ import io.nexora.identity.Principal;
 import io.nexora.identity.PrincipalRepository;
 import io.nexora.identity.sso.DirectorySyncService;
 import io.nexora.office.WopiDiscovery;
+import io.nexora.mail.MailService;
 import io.nexora.portal.PortalService;
 import io.nexora.portal.SiteTemplate;
 import io.nexora.search.SearchAdminService;
@@ -49,13 +50,14 @@ public class FarmService {
     private final JobService jobs;
     private final AuditService audit;
     private final SearchAdminService search;
+    private final MailService mail;
     private final Environment env;
 
     public FarmService(EntityManager em, DataSource dataSource, BlobStore store, StorageProperties storage,
                        ObjectProvider<WopiDiscovery> office, ObjectProvider<DirectorySyncService> directory,
                        NodeRepository nodes, PrincipalRepository principals, GroupMemberRepository members,
                        ContentService content, PortalService portal, BackupService backups, JobService jobs,
-                       AuditService audit, SearchAdminService search, Environment env) {
+                       AuditService audit, SearchAdminService search, MailService mail, Environment env) {
         this.em = em;
         this.dataSource = dataSource;
         this.store = store;
@@ -71,6 +73,7 @@ public class FarmService {
         this.jobs = jobs;
         this.audit = audit;
         this.search = search;
+        this.mail = mail;
         this.env = env;
     }
 
@@ -146,6 +149,14 @@ public class FarmService {
             out.add(new Health("Document reading", reader.ok() ? "OK" : "WARNING", reader.name() + ": " + reader.detail()));
         } else {
             out.add(new Health("Search", "DISABLED", "Turned off by an administrator"));
+        }
+        if (!mail.enabled()) {
+            out.add(new Health("Email", "DISABLED", "Alerts and sharing notices are not sent"));
+        } else {
+            MailService.Status status = mail.status();
+            String problem = mail.check();
+            out.add(new Health("Email", problem != null || status.failed() > 0 ? "WARNING" : "OK", problem != null ? problem
+                    : status.server() + ", " + status.waiting() + " waiting, " + status.failed() + " failed"));
         }
         DirectorySyncService sync = directory.getIfAvailable();
         if (sync == null || !sync.enabled()) {

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
@@ -61,8 +62,8 @@ public class DocumentService {
     public Node upload(CurrentUser user, UUID parentId, String fileName, String declaredMime, Path data,
                        boolean overwrite, String comment) {
         Node parent = content.get(user, parentId);
-        if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER) {
-            throw ApiException.badRequest("invalid_parent", "Files can only be uploaded to a library or folder");
+        if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER && parent.getKind() != Node.Kind.LIST_ITEM) {
+            throw ApiException.badRequest("invalid_parent", "Files can only be uploaded to a library, a folder or a list item");
         }
         // Check rights before looking at names, so people without write access learn nothing about siblings.
         permissions.require(user, parent, Right.ADD_ITEMS);
@@ -82,6 +83,39 @@ public class DocumentService {
         addVersion(user, file, blob, MimeTypes.resolve(name, declaredMime), comment, false);
         audit.record(user, "FILE_UPLOAD", file, Map.of("size", blob.sizeBytes(), "version", currentLabel(file)));
         return file;
+    }
+
+    /** The blank documents people can create. */
+    public enum NewDocument {
+        WORD("docx"), EXCEL("xlsx"), POWERPOINT("pptx");
+
+        final String extension;
+
+        NewDocument(String extension) {
+            this.extension = extension;
+        }
+    }
+
+    /** Creates a blank document, or a copy of a template the user can read. It then behaves like any upload. */
+    public Node createDocument(CurrentUser user, UUID parentId, NewDocument type, String rawName, UUID templateId) {
+        if (rawName == null || rawName.isBlank()) throw ApiException.badRequest("invalid_name", "A document needs a name");
+        if (type == null && templateId == null) throw ApiException.badRequest("invalid_type", "Choose a document type or a template");
+        Node template = templateId == null ? null : requireFile(user, templateId);
+        String extension = template != null ? MimeTypes.extension(template.getName()) : type.extension;
+        String name = rawName.strip();
+        if (!name.toLowerCase(java.util.Locale.ROOT).endsWith("." + extension)) name += "." + extension;
+        Path tmp = null;
+        try (InputStream in = template != null ? store.open(current(template).getStorageKey())
+                : new org.springframework.core.io.ClassPathResource("blank/blank." + extension).getInputStream()) {
+            tmp = Files.createTempFile("nexora-new", ".document");
+            Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return upload(user, parentId, name, null, tmp, false,
+                    template != null ? "Created from template " + template.getName() : "New document");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not create " + name, e);
+        } finally {
+            if (tmp != null) tmp.toFile().delete();
+        }
     }
 
     /** Saves new content for an existing file (new version, or the working copy if checked out). */

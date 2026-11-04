@@ -18,6 +18,7 @@ import { can } from "../components/me";
 import { ColumnInput, changedValues } from "../components/columns";
 import { ErrorBar } from "../components/States";
 import { formatDate } from "../components/format";
+import { ItemExtras } from "../lists/ItemExtras";
 
 /** New / edit form for a list item. Read-only for people without edit rights. */
 export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: NodeDto; onClose: () => void }) {
@@ -77,6 +78,7 @@ export function ItemDialog(props: { list: NodeDto; columns: ColumnDto[]; item?: 
                   {formatDate(item.modifiedAt)} by {item.modifiedBy?.displayName}
                 </Text>
               )}
+              {item && <ItemExtras item={item} columns={columns} onRestored={props.onClose} />}
             </DialogContent>
             <DialogActions>
               <Button onClick={props.onClose}>{editable ? "Cancel" : "Close"}</Button>

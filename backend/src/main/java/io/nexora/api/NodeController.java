@@ -94,7 +94,7 @@ public class NodeController {
     @ResponseStatus(HttpStatus.CREATED)
     public ColumnDto addColumn(@PathVariable UUID id, @Valid @RequestBody CreateColumnRequest body) {
         return ColumnDto.of(content.addColumn(CurrentUser.get(), id, body.displayName(), body.type(), body.required(),
-                body.choices()));
+                body.choices(), body.lookupListId()));
     }
 
     @DeleteMapping("/nodes/{id}/columns/{columnId}")

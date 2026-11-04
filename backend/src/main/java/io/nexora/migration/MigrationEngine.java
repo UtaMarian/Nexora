@@ -59,11 +59,13 @@ public class MigrationEngine {
     private final MigrationItemRepository items;
     private final AuditService audit;
     private final SearchQueue search;
+    private final io.nexora.content.DocumentService documents;
     private final TransactionTemplate tx;
 
     public MigrationEngine(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                            AclEntryRepository acl, PrincipalRepository principals, GroupMemberRepository members,
                            PortalService portal, BlobStore store, MigrationItemRepository items, AuditService audit, SearchQueue search,
+                           io.nexora.content.DocumentService documents,
                            PlatformTransactionManager txManager) {
         this.nodes = nodes;
         this.versions = versions;
@@ -76,6 +78,7 @@ public class MigrationEngine {
         this.items = items;
         this.audit = audit;
         this.search = search;
+        this.documents = documents;
         this.tx = new TransactionTemplate(txManager);
     }
 
@@ -260,6 +263,8 @@ public class MigrationEngine {
             });
             ctx.progress((i + 1) * 95 / Math.max(1, chosen.size()));
         }
+
+        run.guarded("lookup columns", () -> resolveLookups(run));
 
         if (options.deleteMissing() && options.lists() == null && run.failed == 0) {
             tx.executeWithoutResult(s -> deleteMissing(run));
@@ -459,7 +464,6 @@ public class MigrationEngine {
             return n;
         });
         Map<String, Field> fields = run.options.metadata() ? ensureColumns(run, listId, container) : Map.of();
-        int attachments = 0;
         int maxId = 0;
         for (JsonNode item : run.sp.all(run.sp.web(run.task.getSourceWeb(), "/_api/web/lists(guid'" + listId
                 + "')/items?$top=500&$select=*,Author/LoginName,Author/Title,Author/EMail,Editor/LoginName,Editor/Title,Editor/EMail"
@@ -467,7 +471,6 @@ public class MigrationEngine {
             run.ctx.checkCancelled();
             int id = item.path("ID").asInt(item.path("Id").asInt());
             maxId = Math.max(maxId, id);
-            if (item.path("Attachments").asBoolean(false)) attachments++;
             String key = listId + ":" + id;
             run.seen.add(key);
             Instant modified = instant(item.path("Modified"));
@@ -497,6 +500,9 @@ public class MigrationEngine {
                 nodes.save(n);
                 map(run, "LIST_ITEM", key, rootUrl + "/" + id, n, modified, null);
             }));
+            if (item.path("Attachments").asBoolean(false)) {
+                run.guarded("attachments of item " + id, () -> copyAttachments(run, listId, id, container, modified));
+            }
         }
         int next = maxId + 1;
         tx.executeWithoutResult(s -> nodes.findLive(container.getId()).ifPresent(n -> {
@@ -506,7 +512,60 @@ public class MigrationEngine {
             n.setSettings(settings);
             nodes.save(n);
         }));
-        if (attachments > 0) run.warn(attachments + " item(s) in '" + list.path("Title").asText() + "' have attachments, which are not copied");
+    }
+
+    /** Attachments have no dates of their own, so they follow their item: unchanged item, unchanged attachments. */
+    private void copyAttachments(Run run, String listId, int id, Node list, Instant modified) throws IOException {
+        Node item = nodes.findLiveByPath(list.getPath() + "/" + id).orElse(null);
+        if (item == null) return;
+        for (JsonNode a : run.sp.all(run.sp.web(run.task.getSourceWeb(), "/_api/web/lists(guid'" + listId + "')/items(" + id + ")/AttachmentFiles"))) {
+            String name = Names.item(a.path("FileName").asText());
+            String url = a.path("ServerRelativeUrl").asText();
+            String key = listId + ":" + id + ":attachment:" + name;
+            run.seen.add(key);
+            MigrationItem known = items.findByTaskIdAndSourceKey(run.task.getId(), key).orElse(null);
+            if (known != null && Objects.equals(known.getSourceModified(), modified)) {
+                run.unchanged++;
+                continue;
+            }
+            Path tmp = Files.createTempFile("nexora-mig", ".bin");
+            try {
+                run.sp.download(run.sp.web(run.task.getSourceWeb(), "/_api/web/GetFileByServerRelativeUrl(@u)/$value?@u=" + literal(url)), tmp);
+                run.bytes += Files.size(tmp);
+                tx.executeWithoutResult(s -> {
+                    Node file = documents.upload(run.actor, item.getId(), name, null, tmp, true, "Migrated attachment");
+                    map(run, "FILE", key, url, file, modified, "1.0");
+                });
+                run.created++;
+            } finally {
+                Files.deleteIfExists(tmp);
+            }
+        }
+    }
+
+    /** Lists can look each other up in any order, so lookups are tied to their lists once all lists are here. */
+    private void resolveLookups(Run run) {
+        for (LookupField l : run.lookups) {
+            tx.executeWithoutResult(s -> {
+                Node target = mapped(run, l.listId()).orElse(null);
+                if (target == null) {
+                    run.warn("Column '" + l.column().getDisplayName() + "' in " + l.container().getPath() + " looks up a list that was not copied");
+                    return;
+                }
+                ColumnDef column = columns.findById(l.column().getId()).orElseThrow();
+                column.setLookupListId(target.getId());
+                String key = column.getInternalName();
+                for (Node row : nodes.findLiveChildren(l.container().getId())) {
+                    if (!(row.getMetadata().get(key) instanceof Map<?, ?> value)) continue;
+                    Node picked = nodes.findLiveByPath(target.getPath() + "/" + value.get("lookupId")).orElse(null);
+                    Map<String, Object> metadata = new HashMap<>(row.getMetadata());
+                    if (picked == null) metadata.remove(key);
+                    else metadata.put(key, Map.of("lookupId", value.get("lookupId"), "title", picked.getTitle()));
+                    row.setMetadata(metadata);
+                    nodes.save(row);
+                }
+            });
+        }
     }
 
     // ---- columns and values ----
@@ -514,10 +573,12 @@ public class MigrationEngine {
     /** A SharePoint field and the NEXORA column it maps to. */
     record Field(String spName, String spType, ColumnDef column) {}
 
+    record LookupField(Node container, ColumnDef column, String listId) {}
+
     private Map<String, Field> ensureColumns(Run run, String listId, Node container) throws IOException {
         List<JsonNode> spFields = run.sp.all(run.sp.web(run.task.getSourceWeb(), "/_api/web/lists(guid'" + listId + "')/fields?$filter="
                 + query("Hidden eq false and ReadOnlyField eq false and FromBaseType eq false")
-                + "&$select=InternalName,Title,TypeAsString,Required,Choices"));
+                + "&$select=InternalName,Title,TypeAsString,Required,Choices,LookupList"));
         return tx.execute(s -> {
             Map<String, Field> out = new LinkedHashMap<>();
             List<ColumnDef> existing = columns.findByLibraryIdOrderByPosition(container.getId());
@@ -533,6 +594,7 @@ public class MigrationEngine {
                     case "Choice", "MultiChoice" -> ColumnDef.Type.CHOICE;
                     case "URL" -> ColumnDef.Type.URL;
                     case "User", "UserMulti" -> ColumnDef.Type.PERSON;
+                    case "Lookup" -> ColumnDef.Type.LOOKUP;
                     default -> null;
                 };
                 String title = f.path("Title").asText(f.path("InternalName").asText());
@@ -549,6 +611,9 @@ public class MigrationEngine {
                     existing.add(def);
                 }
                 out.put(f.path("InternalName").asText(), new Field(f.path("InternalName").asText(), spType, def));
+                if (type == ColumnDef.Type.LOOKUP) {
+                    run.lookups.add(new LookupField(container, def, f.path("LookupList").asText("").replaceAll("[{}]", "").toLowerCase(Locale.ROOT)));
+                }
             }
             return out;
         });
@@ -565,6 +630,10 @@ public class MigrationEngine {
                     JsonNode id = item.path(f.spName() + "Id");
                     JsonNode first = id.isArray() ? id.path(0) : id;
                     yield first.isNumber() ? personSnapshot(run, first.asInt()) : null;
+                }
+                case LOOKUP -> {
+                    JsonNode id = item.path(f.spName() + "Id");
+                    yield id.isNumber() ? Map.of("lookupId", id.asInt(), "title", "") : null; // resolveLookups fills in the title
                 }
                 case NUMBER -> item.path(f.spName()).isNumber() ? item.path(f.spName()).decimalValue() : null;
                 case BOOLEAN -> item.path(f.spName()).isBoolean() ? item.path(f.spName()).asBoolean() : null;
@@ -905,6 +974,7 @@ public class MigrationEngine {
         final CurrentUser actor;
         final JobService.Context ctx;
         Node site;
+        final List<LookupField> lookups = new ArrayList<>();
         Map<Integer, String> siteGroupRoles = Map.of();
         final Map<Integer, Principal> spGroups = new HashMap<>();
         final Map<Integer, Principal> byUserId = new HashMap<>();

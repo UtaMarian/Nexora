@@ -34,6 +34,10 @@ public class NodeMapper {
     }
 
     @Transactional(readOnly = true)
+    public PrincipalRef ref(UUID id) {
+        return id == null ? null : PrincipalRef.of(identity.get(id));
+    }
+
     public NodeDto one(CurrentUser user, Node node) {
         return many(user, List.of(node)).get(0);
     }

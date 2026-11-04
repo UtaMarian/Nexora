@@ -27,7 +27,7 @@ with `NEXORA_BOOTSTRAP_ADMIN_PASSWORD`. With `NEXORA_DEMO_DATA=true` you also ge
 
 To connect real Active Directory, Kerberos and AD FS, see [docs/identity.md](docs/identity.md).
 
-The stack runs PostgreSQL, SeaweedFS (S3), Collabora Online (port 9980), OpenSearch, Apache Tika, the API and the web app.
+The stack runs PostgreSQL, SeaweedFS (S3), Collabora Online (port 9980), OpenSearch, Apache Tika, Mailpit (test mail at http://localhost:8025), the API and the web app.
 To co-author, open the same Word/Excel/PowerPoint file as two users (for example alice in one browser and
 admin in a private window): both join the same live session and see each other's cursors.
 
@@ -103,6 +103,10 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 | Map a library as a network drive (Windows, macOS, Linux); Office "safe save" keeps version history | ✅ |
 | Site templates: Team, Communication, Project and Intranet portal (libraries, lists, navigation, theme, home page) | ✅ |
 | Change the look: 8 themes, header layout/background, logo, top navigation, home page (welcome, quick links, news) | ✅ |
+| New Word, Excel and PowerPoint documents from the library, blank or from the site's templates; see [docs/lists-sharing-alerts.md](docs/lists-sharing-alerts.md) | ✅ |
+| Saved list views as table, calendar or gallery; lookup columns; attachments; item version history | ✅ |
+| Sharing with people and with expiring read-only links, password option, Shared with me, Recent | ✅ |
+| Email alerts, right away or as daily and weekly summaries, through a retrying outbox | ✅ |
 | Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
 | Modern pages and news posts at `/sites/<site>/SitePages/<name>.aspx`: page editor with sections (1–3 columns), text, image, documents, list and news web parts; drafts, publish, version history, use as site home page | ✅ |
 | Central Administration (`/admin`): farm overview and health, site management, jobs, server logs, users, settings | ✅ |
@@ -115,9 +119,9 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 
 ## Not built yet (next slices, in plan order)
 
-3. **Office polish**: WOPI proof-key validation, "New document" from templates.
-4. **Migration, next steps**: validate on a real farm, subsites, list attachments, lookup and managed metadata columns.
-5. Content types and a managed-metadata term store, saved list views, more web parts (quick links, events, people, embed), page templates, workflows (v1).
+3. **Office polish**: WOPI proof-key validation.
+4. **Migration, next steps**: validate on a real farm, subsites, multi-value lookups and managed metadata columns.
+5. Content types and a managed-metadata term store, more web parts (quick links, events, people, embed), page templates, workflows (v1).
 
 ## Layout
 
@@ -128,6 +132,10 @@ backend/    Spring Boot modular monolith (Java 21)
   acl/        permission levels and the single permission-check service
   storage/    BlobStore: filesystem and S3
   audit/      audit events
+  lists/      saved views and item history
+  sharing/    share links, sharing with people
+  alerts/     alert subscriptions and summaries
+  mail/       email outbox
   search/     search engines (OpenSearch, Lucene), document reading (Tika), indexing queue
   portal/     site templates, branding (theme, header, logo, navigation, home page)
   office/     WOPI host for the browser Office editor

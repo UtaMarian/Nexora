@@ -10,6 +10,7 @@ Farm administrators open **Central Administration** from the top bar (`/admin`).
 | Backup and restore | Farm backup, site restore, package download and import |
 | SharePoint migration | Connect farms, scan, copy, delta sync, test old links |
 | Search | Health, work waiting, unreadable documents, rebuild the index. See [search.md](search.md) |
+| Sharing and email | Active links, the switch for links without sign-in, email status and test message. See [lists-sharing-alerts.md](lists-sharing-alerts.md) |
 | Jobs | Status, log and cancel for background work. Two jobs run at a time |
 | Server logs | The latest 5,000 log lines, filtered by level and text. Use container logs for older lines |
 | Audit log | Everything recorded across the farm |

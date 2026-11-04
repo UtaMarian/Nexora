@@ -3,6 +3,13 @@ import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
+  Menu,
+  MenuDivider,
+  MenuGroupHeader,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   MessageBar,
   MessageBarBody,
   ProgressBar,
@@ -21,18 +28,26 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  AddRegular,
+  AlertRegular,
   ArrowUploadRegular,
+  DocumentAddRegular,
   DocumentEditRegular,
+  DocumentTextRegular,
   FolderAddRegular,
   HardDriveRegular,
   LockClosedRegular,
   PeopleRegular,
   SettingsRegular,
+  SlideTextRegular,
+  TableRegular,
 } from "@fluentui/react-icons";
 import { api, ApiError, contentUrl, routeFor, uploadFiles } from "../api/client";
 import type { ColumnDto, Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
 import { ColumnValue } from "../components/columns";
+import { AlertDialog } from "../dialogs/AlertDialog";
+import { NewDocumentDialog, type NewDocumentKind } from "../dialogs/NewDocumentDialog";
 import { FileIcon } from "../components/FileIcon";
 import { ItemActions } from "../components/ItemActions";
 import { can, useMe } from "../components/me";
@@ -89,7 +104,12 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
     queryFn: () => api<ColumnDto[]>(`/api/v1/nodes/${library.id}/columns`),
   });
 
-  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | "drive" | null>(null);
+  const [dialog, setDialog] = useState<"folder" | "settings" | "permissions" | "drive" | "alert" | null>(null);
+  const [newDoc, setNewDoc] = useState<{ kind?: NewDocumentKind; template?: NodeDto } | null>(null);
+  const templates = useQuery({
+    queryKey: ["document-templates", container.siteId],
+    queryFn: () => api<NodeDto[]>(`/api/v1/sites/${container.siteId}/document-templates`),
+  });
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<{ name: string; fraction: number } | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
@@ -130,9 +150,29 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
         <Crumbs items={breadcrumbs} />
         {isLibrary && container.description && <Text className={s.muted}>{container.description}</Text>}
         <Toolbar aria-label={`${title} commands`} style={{ paddingLeft: 0, flexWrap: "wrap" }}>
-          <ToolbarButton icon={<FolderAddRegular />} disabled={!canAdd} onClick={() => setDialog("folder")}>
-            New folder
-          </ToolbarButton>
+          <Menu>
+            <MenuTrigger disableButtonEnhancement>
+              <ToolbarButton icon={<AddRegular />} disabled={!canAdd}>New</ToolbarButton>
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuItem icon={<FolderAddRegular />} onClick={() => setDialog("folder")}>Folder</MenuItem>
+                <MenuDivider />
+                <MenuItem icon={<DocumentTextRegular />} onClick={() => setNewDoc({ kind: "WORD" })}>Word document</MenuItem>
+                <MenuItem icon={<TableRegular />} onClick={() => setNewDoc({ kind: "EXCEL" })}>Excel workbook</MenuItem>
+                <MenuItem icon={<SlideTextRegular />} onClick={() => setNewDoc({ kind: "POWERPOINT" })}>PowerPoint presentation</MenuItem>
+                {!!templates.data?.length && (
+                  <>
+                    <MenuDivider />
+                    <MenuGroupHeader>From a template</MenuGroupHeader>
+                    {templates.data.map((t) => (
+                      <MenuItem key={t.id} icon={<DocumentAddRegular />} onClick={() => setNewDoc({ template: t })}>{t.title ?? t.name}</MenuItem>
+                    ))}
+                  </>
+                )}
+              </MenuList>
+            </MenuPopover>
+          </Menu>
           <ToolbarButton
             icon={<ArrowUploadRegular />}
             disabled={!canAdd}
@@ -146,6 +186,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
               Manage access
             </ToolbarButton>
           )}
+          <ToolbarButton icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</ToolbarButton>
           <ToolbarButton icon={<HardDriveRegular />} onClick={() => setDialog("drive")}>
             Map network drive
           </ToolbarButton>
@@ -314,6 +355,8 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
       {dialog === "settings" && <LibrarySettingsDialog library={container} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={container} onClose={() => setDialog(null)} />}
       {dialog === "drive" && <MapDriveDialog node={container} onClose={() => setDialog(null)} />}
+      {dialog === "alert" && <AlertDialog node={container} onClose={() => setDialog(null)} />}
+      {newDoc && <NewDocumentDialog parent={container} kind={newDoc.kind} template={newDoc.template} onClose={() => setNewDoc(null)} />}
     </>
   );
 }

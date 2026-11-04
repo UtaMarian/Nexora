@@ -10,6 +10,9 @@ import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
 import io.nexora.identity.Principal;
 import io.nexora.identity.PrincipalRepository;
+import io.nexora.lists.ItemHistory;
+import io.nexora.lists.ItemVersion;
+import io.nexora.lists.ItemVersionRepository;
 import io.nexora.search.SearchQueue;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -39,15 +42,20 @@ public class ContentService {
     private final BlobGarbageCollector gc;
     private final EditLockService editLocks;
     private final SearchQueue search;
+    private final ItemHistory itemHistory;
+    private final ItemVersionRepository itemVersions;
     private final boolean selfServiceSites;
 
     public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                           PrincipalRepository principals, GroupMemberRepository members,
                           PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
-                          EditLockService editLocks, SearchQueue search,
+                          EditLockService editLocks, SearchQueue search, ItemHistory itemHistory,
+                          ItemVersionRepository itemVersions,
                           @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
         this.editLocks = editLocks;
         this.search = search;
+        this.itemHistory = itemHistory;
+        this.itemVersions = itemVersions;
         this.nodes = nodes;
         this.versions = versions;
         this.columns = columns;
@@ -94,7 +102,8 @@ public class ContentService {
     @Transactional(readOnly = true)
     public List<Node> children(CurrentUser user, UUID parentId) {
         Node parent = get(user, parentId);
-        if (!parent.getKind().isContainer()) throw ApiException.badRequest("not_a_container", "Files have no children");
+        boolean holdsFiles = parent.getKind().isContainer() || parent.getKind() == Node.Kind.LIST_ITEM; // attachments
+        if (!holdsFiles) throw ApiException.badRequest("not_a_container", "Files have no children");
         return permissions.filterVisible(user, nodes.findLiveChildren(parent.getId()));
     }
 
@@ -242,6 +251,7 @@ public class ContentService {
         item.setMetadata(metadata);
         nodes.save(item);
         list.touch(user.id());
+        itemHistory.record(item, user.id());
         audit.record(user, "ITEM_CREATE", item, Map.of("title", item.getTitle()));
         return item;
     }
@@ -289,7 +299,11 @@ public class ContentService {
         };
         permissions.require(user, node, needed);
         assertNotLockedByOthers(user, node);
-        if (node.getKind() == Node.Kind.LIST_ITEM) {
+        boolean item = node.getKind() == Node.Kind.LIST_ITEM;
+        String oldTitle = node.getTitle();
+        Map<String, Object> oldValues = new HashMap<>(node.getMetadata());
+        if (item) {
+            itemHistory.baseline(node);
             if (newName != null && !newName.equals(node.getName())) {
                 throw ApiException.badRequest("item_id_immutable", "List item IDs cannot be changed; edit the Title instead");
             }
@@ -321,6 +335,10 @@ public class ContentService {
         }
         node.touch(user.id());
         search.node(node.getId()); // title and description changes have no audit event of their own
+        if (item && !(Objects.equals(oldTitle, node.getTitle()) && oldValues.equals(node.getMetadata()))) {
+            itemHistory.record(node, user.id());
+            if (!Objects.equals(oldTitle, node.getTitle())) refreshLookups(node);
+        }
         return node;
     }
 
@@ -405,6 +423,75 @@ public class ContentService {
         return nodes.findById(root.getId()).orElseThrow();
     }
 
+    /** Lookup values keep the title they point at, so a renamed item must be renamed everywhere it is used. */
+    private void refreshLookups(Node item) {
+        for (ColumnDef column : columns.findByLookupListId(item.getParentId())) {
+            for (Node row : nodes.findLiveChildren(column.getLibraryId())) {
+                if (row.getMetadata().get(column.getInternalName()) instanceof Map<?, ?> value
+                        && item.getName().equals(String.valueOf(value.get("lookupId")))) {
+                    Map<String, Object> metadata = new HashMap<>(row.getMetadata());
+                    metadata.put(column.getInternalName(), lookupValue(item));
+                    row.setMetadata(metadata);
+                    search.node(row.getId());
+                }
+            }
+        }
+    }
+
+    private static Map<String, Object> lookupValue(Node item) {
+        return Map.of("lookupId", Integer.parseInt(item.getName()), "title", item.getTitle());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ItemVersion> itemHistory(CurrentUser user, UUID itemId) {
+        return itemVersions.findByItemIdOrderByVersionDesc(listItem(user, itemId).getId());
+    }
+
+    /** Makes an earlier version current again, as a new version, so nothing is lost. */
+    public Node restoreItemVersion(CurrentUser user, UUID itemId, int version) {
+        Node item = listItem(user, itemId);
+        permissions.require(user, item, Right.EDIT_ITEMS);
+        assertNotLockedByOthers(user, item);
+        ItemVersion v = itemVersions.findByItemIdAndVersion(item.getId(), version).orElseThrow(() -> ApiException.notFound("Version"));
+        itemHistory.baseline(item);
+        boolean renamed = !Objects.equals(item.getTitle(), v.getTitle());
+        item.setTitle(v.getTitle());
+        item.setMetadata(new HashMap<>(v.getMetadata()));
+        item.touch(user.id());
+        nodes.save(item);
+        itemHistory.record(item, user.id());
+        if (renamed) refreshLookups(item);
+        audit.record(user, "ITEM_RESTORE", item, Map.of("version", version));
+        return item;
+    }
+
+    private Node listItem(CurrentUser user, UUID itemId) {
+        Node item = get(user, itemId);
+        if (item.getKind() != Node.Kind.LIST_ITEM) throw ApiException.badRequest("not_an_item", "Not a list item");
+        return item;
+    }
+
+    /** Images attached to the items of a list that the user can see. */
+    @Transactional(readOnly = true)
+    public List<Node> attachedImages(CurrentUser user, UUID listId) {
+        Node list = get(user, listId);
+        if (list.getKind() != Node.Kind.LIST) throw ApiException.badRequest("not_a_list", "Not a list");
+        List<Node> images = nodes.findLiveDescendants(NodeRepository.likePrefix(list.getPath())).stream()
+                .filter(n -> n.getKind() == Node.Kind.FILE && n.getMimeType() != null && n.getMimeType().startsWith("image/"))
+                .sorted(Comparator.comparing(Node::getName, String.CASE_INSENSITIVE_ORDER)).toList();
+        return permissions.filterVisible(user, images);
+    }
+
+    /** The files in the site's Templates library. */
+    @Transactional(readOnly = true)
+    public List<Node> documentTemplates(CurrentUser user, UUID siteId) {
+        Node site = get(user, siteId);
+        return nodes.findLiveByPath(site.getPath() + "/Templates").filter(n -> n.getKind() == Node.Kind.LIBRARY)
+                .map(library -> permissions.filterVisible(user, nodes.findLiveChildren(library.getId())).stream()
+                        .filter(n -> n.getKind() == Node.Kind.FILE).toList())
+                .orElse(List.of());
+    }
+
     /** Permanently deletes a recycle-bin item, its descendants, all versions and unreferenced blobs. */
     public void purge(CurrentUser user, UUID id) {
         Node root = deletedRoot(user, id);
@@ -470,7 +557,7 @@ public class ContentService {
     }
 
     public ColumnDef addColumn(CurrentUser user, UUID libraryId, String displayName, ColumnDef.Type type,
-                               boolean required, List<String> choices) {
+                               boolean required, List<String> choices, UUID lookupListId) {
         Node lib = get(user, libraryId);
         if (!lib.getKind().hasColumns()) throw ApiException.badRequest("not_a_library", "Not a library or list");
         permissions.require(user, lib, Right.MANAGE_LISTS);
@@ -480,6 +567,13 @@ public class ContentService {
         if (type == ColumnDef.Type.CHOICE && (choices == null || choices.isEmpty())) {
             throw ApiException.badRequest("invalid_column", "A choice column needs at least one choice");
         }
+        if (type == ColumnDef.Type.LOOKUP) {
+            if (lookupListId == null) throw ApiException.badRequest("invalid_column", "A lookup column needs a list to look up");
+            Node target = get(user, lookupListId);
+            if (target.getKind() != Node.Kind.LIST || !target.getSiteId().equals(lib.getSiteId())) {
+                throw ApiException.badRequest("invalid_column", "A lookup column must point at a list in the same site");
+            }
+        }
         List<ColumnDef> existing = columns.findByLibraryIdOrderByPosition(lib.getId());
         String base = Names.columnInternalName(displayName);
         String internal = base;
@@ -488,6 +582,7 @@ public class ContentService {
         for (int i = 1; taken.contains(internal); i++) internal = base + i;
         ColumnDef col = columns.save(new ColumnDef(lib.getId(), internal, displayName.strip(), type, required,
                 choices, existing.size()));
+        if (type == ColumnDef.Type.LOOKUP) col.setLookupListId(lookupListId);
         audit.record(user, "COLUMN_ADD", lib, Map.of("column", internal, "type", type.name()));
         return col;
     }
@@ -556,6 +651,15 @@ public class ContentService {
                 } catch (DateTimeParseException ex) {
                     throw ApiException.badRequest("invalid_value", label + " must be a date (YYYY-MM-DD)");
                 }
+            }
+            case LOOKUP -> {
+                Object ref = value instanceof Map<?, ?> m ? m.get("lookupId") : value;
+                String itemId = String.valueOf(ref).strip();
+                Node item = !itemId.matches("\\d{1,9}") || def.getLookupListId() == null ? null : nodes.findLive(def.getLookupListId())
+                        .flatMap(list -> nodes.findLiveByPath(list.getPath() + "/" + itemId))
+                        .filter(n -> n.getKind() == Node.Kind.LIST_ITEM).orElse(null);
+                if (item == null) throw ApiException.badRequest("invalid_value", label + " must be an item of the list it looks up");
+                yield lookupValue(item);
             }
             case CHOICE -> {
                 String s = value.toString();

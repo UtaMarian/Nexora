@@ -54,6 +54,14 @@ public class FileController {
         return mapper.many(user, saved);
     }
 
+    /** Creates a blank Word, Excel or PowerPoint file, or a copy of a template. */
+    @PostMapping("/documents")
+    @ResponseStatus(HttpStatus.CREATED)
+    public NodeDto newDocument(@PathVariable UUID id, @RequestBody io.nexora.api.Dtos.NewDocumentRequest body) {
+        CurrentUser user = CurrentUser.get();
+        return mapper.one(user, documents.createDocument(user, id, body.type(), body.name(), body.templateId()));
+    }
+
     /** Replaces a file's content with the raw request body (handy for scripts and, later, WebDAV PUT). */
     @PutMapping("/content")
     public NodeDto replaceContent(@PathVariable UUID id, HttpServletRequest request,

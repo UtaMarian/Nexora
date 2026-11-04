@@ -10,6 +10,7 @@ import {
   PeopleRegular,
   PeopleTeamRegular,
   SearchRegular,
+  ShareRegular,
   SettingsRegular,
   TaskListSquareLtrRegular,
 } from "@fluentui/react-icons";
@@ -47,6 +48,7 @@ const LINKS = [
   { to: "/admin/backups", label: "Backup and restore", icon: <DatabaseArrowUpRegular /> },
   { to: "/admin/migration", label: "SharePoint migration", icon: <ArrowSwapRegular /> },
   { to: "/admin/search", label: "Search", icon: <SearchRegular /> },
+  { to: "/admin/sharing", label: "Sharing and email", icon: <ShareRegular /> },
   { to: "/admin/jobs", label: "Jobs", icon: <TaskListSquareLtrRegular /> },
   { to: "/admin/logs", label: "Server logs", icon: <DocumentTextRegular /> },
   { to: "/admin/audit", label: "Audit log", icon: <HistoryRegular /> },

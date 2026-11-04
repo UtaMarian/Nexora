@@ -52,6 +52,11 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
   const [colType, setColType] = useState<ColumnType>("TEXT");
   const [colRequired, setColRequired] = useState(false);
   const [colChoices, setColChoices] = useState("");
+  const [colLookup, setColLookup] = useState("");
+  const lists = useQuery({
+    queryKey: ["lists", library.siteId], enabled: colType === "LOOKUP",
+    queryFn: () => api<NodeDto[]>(`/api/v1/sites/${library.siteId}/lists`),
+  });
 
   const saveSettings = useMutation({
     mutationFn: (s: LibrarySettings) => api(`/api/v1/nodes/${library.id}/settings`, { method: "PUT", body: s }),
@@ -66,6 +71,7 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
           type: colType,
           required: colRequired,
           choices: colType === "CHOICE" ? colChoices.split("\n").map((c) => c.trim()).filter(Boolean) : [],
+          lookupListId: colType === "LOOKUP" ? colLookup : undefined,
         },
       }),
     onSuccess: () => {
@@ -206,7 +212,18 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
                   />
                 </Field>
               )}
-              <Button type="submit" disabled={!colName.trim() || addColumn.isPending}>
+              {colType === "LOOKUP" && (
+                <Field label="List to look up" required>
+                  <Dropdown
+                    value={lists.data?.find((l) => l.id === colLookup)?.title ?? ""}
+                    selectedOptions={colLookup ? [colLookup] : []}
+                    onOptionSelect={(_, d) => setColLookup(d.optionValue ?? "")}
+                  >
+                    {(lists.data ?? []).map((l) => <Option key={l.id} value={l.id} text={l.title ?? l.name}>{l.title ?? l.name}</Option>)}
+                  </Dropdown>
+                </Field>
+              )}
+              <Button type="submit" disabled={!colName.trim() || addColumn.isPending || (colType === "LOOKUP" && !colLookup)}>
                 Add column
               </Button>
             </form>
