@@ -61,6 +61,10 @@ springdoc:
     path: /swagger-ui.html
 
 nexora:
+  admin:
+    backup-dir: ${NEXORA_BACKUP_DIR:./data/backups}
+    # encrypts stored SharePoint credentials; falls back to the WOPI token secret
+    secret-key: ${NEXORA_ADMIN_SECRET:}
   dav:
     # how desktop Office signs in over WebDAV: basic = the Windows credential prompt (the host must be in Office's
     # "Allow specified hosts to show Basic Authentication prompts" policy), forms = MS-OFBA sign-in window with SSO

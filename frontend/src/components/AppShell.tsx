@@ -15,7 +15,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { TOASTER_ID } from "./ItemActions";
-import { DeleteRegular, HistoryRegular, HomeRegular, PeopleTeamRegular, SearchRegular, SignOutRegular } from "@fluentui/react-icons";
+import { DeleteRegular, HomeRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import { useMe } from "./me";
 
@@ -108,15 +108,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>Recycle bin</span>
           </NavLink>
           {me.admin && (
-            <NavLink to="/audit" className={s.navLink} title="Audit log">
-              <HistoryRegular />
-              <span>Audit</span>
-            </NavLink>
-          )}
-          {me.admin && (
-            <NavLink to="/admin/directory" className={s.navLink} title="Directory">
-              <PeopleTeamRegular />
-              <span>Directory</span>
+            <NavLink to="/admin" className={s.navLink} title="Central Administration">
+              <ShieldKeyholeRegular />
+              <span>Central Administration</span>
             </NavLink>
           )}
         </nav>

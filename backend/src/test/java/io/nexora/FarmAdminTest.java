@@ -226,6 +226,15 @@ class FarmAdminTest extends ApiTestSupport {
         assertThat(restore.get("status").asText()).isEqualTo("SUCCEEDED");
         JsonNode f = call(ADMIN, get("/api/v1/resolve").param("path", "/sites/" + target + "/Shared Documents/a.txt"), 200).get("node");
         assertThat(download(owner, id(f))).isEqualTo("keep me");
+
+        // once purged, the original URL is free: the site comes back exactly where it was
+        call(ADMIN, delete("/api/v1/recycle-bin/{id}", site), 204);
+        JsonNode back = waitForJob(call(ADMIN, jsonBody(post("/api/v1/admin/backups/{id}/restore", backup),
+                Map.of("sites", List.of(Map.of("name", url)))), 202));
+        assertThat(back.get("status").asText()).isEqualTo("SUCCEEDED");
+        assertThat(back.get("log").asText()).doesNotContain("already exists");
+        JsonNode original = call(ADMIN, get("/api/v1/resolve").param("path", "/sites/" + url + "/Shared Documents/a.txt"), 200).get("node");
+        assertThat(download(owner, id(original))).isEqualTo("keep me");
     }
 
     @Test

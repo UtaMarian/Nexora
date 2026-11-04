@@ -418,6 +418,8 @@ public class ContentService {
             nodes.delete(n);
             nodes.flush();
         }
+        // a purged site frees its URL, so its Owners, Members and Visitors groups go too
+        if (root.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(root.getId()));
         gc.deleteIfOrphanedAfterCommit(keys);
         audit.record(user, "PURGE", root, Map.of("items", subtree.size()));
     }

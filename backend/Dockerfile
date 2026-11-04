@@ -8,7 +8,7 @@ COPY src src
 RUN ./mvnw -B -q -DskipTests package && cp target/nexora-server-*.jar /app.jar
 
 FROM eclipse-temurin:21-jre
-RUN useradd --system --uid 10001 nexora
+RUN useradd --system --uid 10001 nexora && mkdir -p /var/lib/nexora/backups && chown -R nexora /var/lib/nexora
 COPY --from=build /app.jar /opt/nexora/nexora.jar
 USER nexora
 EXPOSE 8080

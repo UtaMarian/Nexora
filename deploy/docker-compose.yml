@@ -169,6 +169,8 @@ services:
     build: ../backend
     image: nexora/backend:local
     restart: unless-stopped
+    volumes:
+      - backup-data:/var/lib/nexora/backups
     depends_on:
       db: { condition: service_healthy }
       s3: { condition: service_healthy }
@@ -192,6 +194,8 @@ services:
       NEXORA_SECURE_COOKIES: "true"
       # desktop Office sign-in: basic (Windows prompt) or forms (MS-OFBA window with single sign-on)
       NEXORA_OFFICE_SIGN_IN: ${NEXORA_OFFICE_SIGN_IN:-basic}
+      NEXORA_BACKUP_DIR: /var/lib/nexora/backups
+      NEXORA_ADMIN_SECRET: ${NEXORA_ADMIN_SECRET:-}
       # troubleshooting sign-in: NEXORA_SECURITY_LOG=DEBUG
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${NEXORA_SECURITY_LOG:-INFO}
       # single sign-on and directory sync through Keycloak
@@ -226,6 +230,7 @@ services:
       - "${NEXORA_HTTP_PORT:-8088}:80"
 
 volumes:
+  backup-data:
   db-data:
   blob-data:
   keycloak-data:

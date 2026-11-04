@@ -98,6 +98,9 @@ cd frontend && pnpm typecheck
 | Change the look: 8 themes, header layout/background, logo, top navigation, home page (welcome, quick links, news) | ✅ |
 | Lists with templates (Tasks, Issues, Contacts, Announcements, Links, Events, Custom), sortable/filterable views, item forms; Person and Hyperlink columns | ✅ |
 | Modern pages and news posts at `/sites/<site>/SitePages/<name>.aspx`: page editor with sections (1–3 columns), text, image, documents, list and news web parts; drafts, publish, version history, use as site home page | ✅ |
+| Central Administration (`/admin`): farm overview and health, site management, jobs, server logs, users, settings | ✅ |
+| Site and farm backup, restore under any URL, site export and import between farms | ✅ |
+| SharePoint migration: scan, copy with versions, metadata and permissions, delta sync, old-URL redirects. Tested against a simulated farm only; see [docs/administration.md](docs/administration.md) | ⚠️ |
 | HTTPS everywhere (nginx TLS for app, API, WebDAV, Keycloak and Collabora) | ✅ |
 | Single sign-on via Keycloak: OIDC + PKCE, AD/LDAP users and nested groups, Kerberos, AD FS (SAML) | ✅ |
 | Directory sync (AD groups usable in permissions before first sign-in), admin group mapping, Basic and bearer auth for directory users | ✅ |
@@ -107,7 +110,7 @@ cd frontend && pnpm typecheck
 
 1. **Search**: OpenSearch + Apache Tika + OCR, full-text and security-trimmed (today: name/title match only).
 3. **Office polish**: WOPI proof-key validation, "New document" from templates.
-4. **Migration tooling**: assess, map, copy with versions and permissions, delta sync, URL redirects.
+4. **Migration, next steps**: validate on a real farm, subsites, list attachments, lookup and managed metadata columns.
 5. Content types and a managed-metadata term store, saved list views, more web parts (quick links, events, people, embed), page templates, workflows (v1).
 
 ## Layout
