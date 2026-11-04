@@ -41,6 +41,16 @@ public class FileVersion {
         this.createdAt = Instant.now();
     }
 
+    /** A version brought in by restore or migration, with its original author, date and label. */
+    public static FileVersion imported(UUID nodeId, int major, int minor, String storageKey, long sizeBytes,
+                                       String sha256, String mimeType, String fileName, String comment,
+                                       UUID createdBy, Instant createdAt) {
+        FileVersion v = new FileVersion(nodeId, major, minor, storageKey, sizeBytes, sha256, mimeType, fileName,
+                comment, createdBy);
+        if (createdAt != null) v.createdAt = createdAt;
+        return v;
+    }
+
     public String label() { return major + "." + minor; }
     public boolean isMajor() { return minor == 0; }
 

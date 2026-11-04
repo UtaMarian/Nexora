@@ -93,6 +93,14 @@ public class Node {
         this.modifiedAt = Instant.now();
     }
 
+    /** Keeps the original authors and dates of imported or migrated content. */
+    public void importAudit(UUID createdBy, Instant createdAt, UUID modifiedBy, Instant modifiedAt) {
+        if (createdBy != null) this.createdBy = createdBy;
+        if (createdAt != null) this.createdAt = createdAt;
+        if (modifiedBy != null) this.modifiedBy = modifiedBy;
+        if (modifiedAt != null) this.modifiedAt = modifiedAt;
+    }
+
     public boolean isDeleted() { return deletedAt != null; }
     public boolean isCheckedOut() { return checkedOutBy != null; }
 
