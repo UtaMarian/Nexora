@@ -13,4 +13,8 @@ public interface AdminJobRepository extends JpaRepository<AdminJob, UUID> {
     List<AdminJob> latest(Pageable page);
 
     List<AdminJob> findByStatusIn(Collection<AdminJob.Status> statuses);
+
+    List<AdminJob> findByTypeAndStatusIn(String type, Collection<AdminJob.Status> statuses);
+
+    java.util.Optional<AdminJob> findFirstByTypeOrderByCreatedAtDesc(String type);
 }

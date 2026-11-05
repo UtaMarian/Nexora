@@ -3,6 +3,7 @@ package io.nexora.sharing;
 import io.nexora.acl.PermissionService;
 import io.nexora.audit.AuditService;
 import io.nexora.common.ApiException;
+import io.nexora.content.DraftPolicy;
 import io.nexora.content.FileVersion;
 import io.nexora.content.FileVersionRepository;
 import io.nexora.content.Node;
@@ -22,6 +23,7 @@ import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 
@@ -52,10 +54,12 @@ public class LinkAccessService {
     private final PasswordEncoder encoder;
     private final BlobStore blobs;
     private final AuditService audit;
+    private final DraftPolicy drafts;
 
     public LinkAccessService(ShareLinkRepository links, SharingService sharing, NodeRepository nodes, FileVersionRepository versions,
                              PermissionService permissions, PrincipalRepository principals, PasswordEncoder encoder,
-                             BlobStore blobs, AuditService audit) {
+                             BlobStore blobs, AuditService audit, DraftPolicy drafts) {
+        this.drafts = drafts;
         this.links = links;
         this.sharing = sharing;
         this.nodes = nodes;
@@ -81,10 +85,26 @@ public class LinkAccessService {
             entries = nodes.findLiveChildren(node.getId()).stream()
                     .filter(c -> c.getKind() == Node.Kind.FILE || c.getKind() == Node.Kind.FOLDER)
                     .filter(c -> permissions.aclSource(c).getId().equals(source))
-                    .map(c -> new Entry(c.getId(), c.getName(), c.getKind().name(), c.getSizeBytes(), c.getModifiedAt())).toList();
+                    .filter(c -> c.getKind() != Node.Kind.FILE || shown(c).isPresent())
+                    .map(c -> entry(c, shown(c))).toList();
         }
-        return new Opened(node.getId(), node.getName(), node.getKind().name(), node.getSizeBytes(), node.getModifiedAt(), sharedBy,
+        Optional<FileVersion> version = shown(node);
+        if (node.getKind() == Node.Kind.FILE && version.isEmpty()) throw gone();
+        Entry about = entry(node, version);
+        return new Opened(node.getId(), node.getName(), node.getKind().name(), about.sizeBytes(), about.modifiedAt(), sharedBy,
                 link.getExpiresAt(), entries);
+    }
+
+    /** What a link shows of a file. Nobody opening a link counts as an editor, so drafts a library hides stay hidden. */
+    private Optional<FileVersion> shown(Node node) {
+        if (node.getKind() != Node.Kind.FILE || node.getCurrentVersionId() == null) return Optional.empty();
+        return drafts.restricted(node) ? drafts.published(node) : versions.findById(node.getCurrentVersionId());
+    }
+
+    private static Entry entry(Node node, Optional<FileVersion> version) {
+        return new Entry(node.getId(), node.getName(), node.getKind().name(),
+                version.map(FileVersion::getSizeBytes).orElse(node.getSizeBytes()),
+                version.map(FileVersion::getCreatedAt).filter(at -> node.getKind() == Node.Kind.FILE).orElse(node.getModifiedAt()));
     }
 
     /** @param fileId a file inside the shared folder, or null for the shared file itself */
@@ -93,8 +113,7 @@ public class LinkAccessService {
         ShareLink link = usable(token, password, signedIn);
         Node root = target(link);
         Node file = fileId == null ? root : inside(root, fileId);
-        if (file.getKind() != Node.Kind.FILE || file.getCurrentVersionId() == null) throw gone();
-        FileVersion version = versions.findById(file.getCurrentVersionId()).orElseThrow(LinkAccessService::gone);
+        FileVersion version = shown(file).orElseThrow(LinkAccessService::gone);
         audit.record(user, "SHARE_LINK_DOWNLOAD", file, Map.of("link", link.getId().toString(), "version", version.label()));
         try {
             return new Content(file.getName(), version.getMimeType(), version.getSizeBytes(), blobs.open(version.getStorageKey()));

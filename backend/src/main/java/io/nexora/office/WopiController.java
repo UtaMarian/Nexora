@@ -101,7 +101,7 @@ public class WopiController {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 
-    private static String token(HttpServletRequest req) {
+    static String token(HttpServletRequest req) {
         String t = req.getParameter("access_token");
         if (t == null) {
             String auth = req.getHeader(HttpHeaders.AUTHORIZATION);

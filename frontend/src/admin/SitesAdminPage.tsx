@@ -27,7 +27,7 @@ import {
   Tooltip,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, DatabaseArrowUpRegular, DeleteRegular } from "@fluentui/react-icons";
+import { AddRegular, DatabaseArrowUpRegular, DeleteRegular, StorageRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
 import type { Templates } from "../api/types";
 import { Empty, ErrorBar, Loading } from "../components/States";
@@ -40,6 +40,7 @@ export function SitesAdminPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [limiting, setLimiting] = useState<SiteRow | null>(null);
 
   const backup = async (site: SiteRow) => {
     setError(null);
@@ -92,9 +93,9 @@ export function SitesAdminPage() {
                 <TableHeaderCell>Owners</TableHeaderCell>
                 <TableHeaderCell style={{ width: 80 }}>Hub</TableHeaderCell>
                 <TableHeaderCell style={{ width: 80 }}>Files</TableHeaderCell>
-                <TableHeaderCell style={{ width: 100 }}>Size</TableHeaderCell>
+                <TableHeaderCell style={{ width: 150 }}>Size</TableHeaderCell>
                 <TableHeaderCell style={{ width: 130 }}>Last change</TableHeaderCell>
-                <TableHeaderCell style={{ width: 90 }} aria-label="Actions" />
+                <TableHeaderCell style={{ width: 120 }} aria-label="Actions" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -112,9 +113,21 @@ export function SitesAdminPage() {
                     )}
                   </TableCell>
                   <TableCell>{site.files}</TableCell>
-                  <TableCell>{formatSize(site.bytes)}</TableCell>
+                  <TableCell>
+                    {formatSize(site.bytes)}
+                    {site.quotaBytes != null && (
+                      <Text block size={200} style={{ color: (site.quotaUsedBytes ?? 0) >= site.quotaBytes ? tokens.colorPaletteRedForeground1 : tokens.colorNeutralForeground3 }}>
+                        {formatSize(site.quotaUsedBytes ?? 0)} of {formatSize(site.quotaBytes)} used
+                      </Text>
+                    )}
+                  </TableCell>
                   <TableCell>{formatRelative(site.lastModified)}</TableCell>
                   <TableCell>
+                    {!site.subsite && (
+                      <Tooltip content="Storage limit" relationship="label">
+                        <Button size="small" appearance="subtle" icon={<StorageRegular />} onClick={() => setLimiting(site)} />
+                      </Tooltip>
+                    )}
                     <Tooltip content="Back up this site" relationship="label">
                       <Button size="small" appearance="subtle" icon={<DatabaseArrowUpRegular />} onClick={() => backup(site)} />
                     </Tooltip>
@@ -129,7 +142,70 @@ export function SitesAdminPage() {
         </div>
       )}
       {creating && <CreateSiteDialog onClose={() => setCreating(false)} />}
+      {limiting && <QuotaDialog site={limiting} onClose={() => setLimiting(null)} />}
     </>
+  );
+}
+
+const GB = 1024 ** 3;
+
+function QuotaDialog({ site, onClose }: { site: SiteRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [limit, setLimit] = useState(site.quotaBytes == null ? "" : String(+(site.quotaBytes / GB).toFixed(2)));
+  const [warn, setWarn] = useState(site.quotaWarnBytes == null || site.quotaBytes == null ? "90" : String(Math.round(site.quotaWarnBytes * 100 / site.quotaBytes)));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const percent = Number(warn);
+  const valid = Number(limit) > 0 && (warn === "" || (percent > 0 && percent < 100));
+
+  const run = async (request: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await request();
+      await qc.invalidateQueries({ queryKey: ["admin", "sites"] });
+      onClose();
+    } catch (e) {
+      setError(e);
+      setBusy(false);
+    }
+  };
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    const maxBytes = Math.round(Number(limit) * GB);
+    void run(() => api(`/api/v1/admin/sites/${site.id}/quota`, {
+      method: "PUT",
+      body: { maxBytes, warnBytes: warn === "" ? undefined : Math.round(maxBytes * percent / 100) },
+    }));
+  };
+
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface style={{ maxWidth: 480 }}>
+        <form onSubmit={save}>
+          <DialogBody>
+            <DialogTitle>Storage limit: {site.title}</DialogTitle>
+            <DialogContent style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <ErrorBar error={error} />
+              <Text>The limit covers subsites, every version, drafts and the recycle bin. New files are refused at the limit, and existing ones can still be read and deleted.</Text>
+              <Field label="Limit in GB" required>
+                <Input type="number" min={0} step="any" value={limit} onChange={(_, d) => setLimit(d.value)} autoFocus />
+              </Field>
+              <Field label="Email the owners at this percentage" hint="Leave empty for no warning">
+                <Input type="number" min={1} max={99} value={warn} onChange={(_, d) => setWarn(d.value)} />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              {site.quotaBytes != null && (
+                <Button disabled={busy} onClick={() => void run(() => api(`/api/v1/admin/sites/${site.id}/quota`, { method: "DELETE" }))}>Remove limit</Button>
+              )}
+              <Button onClick={onClose}>Cancel</Button>
+              <Button appearance="primary" type="submit" disabled={busy || !valid}>{busy ? "Saving…" : "Save"}</Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
   );
 }
 

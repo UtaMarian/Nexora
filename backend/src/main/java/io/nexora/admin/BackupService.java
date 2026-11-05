@@ -40,12 +40,16 @@ public class BackupService {
     private static final Pattern ID = Pattern.compile("[a-z0-9-]{1,120}");
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
 
+    /** The job type of a backup started by the schedule. */
+    public static final String SCHEDULED_JOB = "SCHEDULED_BACKUP";
+
     public enum Kind { SITE, FARM, UPLOAD }
 
     public record SiteEntry(String name, String title, String file, long sizeBytes, int items, int versions) {}
 
     public record BackupInfo(String id, Kind kind, String label, Instant createdAt, String createdBy,
-                             List<SiteEntry> sites, boolean includesDirectory, long sizeBytes) {}
+                             List<SiteEntry> sites, boolean includesDirectory, long sizeBytes, boolean scheduled,
+                             boolean partial) {}
 
     public record DirectoryBackup(List<UserRec> users, List<GroupRec> groups) {}
 
@@ -97,7 +101,7 @@ public class BackupService {
             Path dir = Files.createDirectories(root.resolve(id).resolve("sites"));
             SiteTransferService.ExportResult r = transfer.export(siteId, actor.login(), dir.resolve(site.getName() + ".zip"), ctx::log);
             write(new BackupInfo(id, Kind.SITE, "Site backup of " + site.getPath(), Instant.now(), actor.login(),
-                    List.of(entry(r)), false, r.bytes()));
+                    List.of(entry(r)), false, r.bytes(), false, false));
             audit.record(actor, "SITE_BACKUP", site, Map.of("backup", id));
             return Map.of("backupId", id, "items", r.nodes(), "versions", r.versions(), "bytes", r.bytes());
         });
@@ -105,27 +109,56 @@ public class BackupService {
 
     public AdminJob backupFarm(CurrentUser actor) {
         String id = STAMP.format(Instant.now()) + "-farm";
-        return jobs.submit("FARM_BACKUP", "Back up the farm", Map.of("backupId", id), actor, ctx -> {
-            Path dir = Files.createDirectories(root.resolve(id).resolve("sites"));
-            DirectoryBackup directory = tx.execute(s -> directory());
-            json.writeValue(root.resolve(id).resolve("directory.json").toFile(), directory);
-            ctx.log("Saved the directory: " + directory.users().size() + " users, " + directory.groups().size() + " groups");
-            List<Node> sites = nodes.findLiveRootSites(); // each package carries its subsites
-            List<SiteEntry> entries = new ArrayList<>();
-            long bytes = 0;
-            for (int i = 0; i < sites.size(); i++) {
-                ctx.checkCancelled();
-                Node site = sites.get(i);
-                SiteTransferService.ExportResult r = transfer.export(site.getId(), actor.login(), dir.resolve(site.getName() + ".zip"), ctx::log);
-                entries.add(entry(r));
-                bytes += r.bytes();
-                ctx.progress((i + 1) * 100 / sites.size());
-                write(new BackupInfo(id, Kind.FARM, "Farm backup (in progress)", Instant.now(), actor.login(), entries, true, bytes));
-            }
-            write(new BackupInfo(id, Kind.FARM, "Farm backup: " + sites.size() + " sites", Instant.now(), actor.login(),
-                    entries, true, bytes));
-            return Map.of("backupId", id, "sites", sites.size(), "bytes", bytes);
+        return jobs.submit("FARM_BACKUP", "Back up the farm", Map.of("backupId", id), actor, ctx -> farm(id, actor, ctx, false));
+    }
+
+    /** A farm backup that, once it succeeds, removes scheduled backups beyond the newest {@code keep}. */
+    public AdminJob backupFarmOnSchedule(CurrentUser actor, int keep) {
+        String id = STAMP.format(Instant.now()) + "-farm-scheduled"; // its own name: pruning must not reach a backup started by hand in the same second
+        return jobs.submit(SCHEDULED_JOB, "Scheduled farm backup", Map.of("backupId", id), actor, ctx -> {
+            Map<String, Object> result = farm(id, actor, ctx, true);
+            prune(id, keep, actor, ctx);
+            return result;
         });
+    }
+
+    private Map<String, Object> farm(String id, CurrentUser actor, JobService.Context ctx, boolean scheduled) throws Exception {
+        Path dir = Files.createDirectories(root.resolve(id).resolve("sites"));
+        // written first, so that a run dying at any point leaves something the next one can recognise and remove
+        write(new BackupInfo(id, Kind.FARM, "Farm backup (in progress)", Instant.now(), actor.login(), List.of(), true, 0, scheduled, true));
+        DirectoryBackup directory = tx.execute(s -> directory());
+        json.writeValue(root.resolve(id).resolve("directory.json").toFile(), directory);
+        ctx.log("Saved the directory: " + directory.users().size() + " users, " + directory.groups().size() + " groups");
+        List<Node> sites = nodes.findLiveRootSites(); // each package carries its subsites
+        List<SiteEntry> entries = new ArrayList<>();
+        long bytes = 0;
+        for (int i = 0; i < sites.size(); i++) {
+            ctx.checkCancelled();
+            Node site = sites.get(i);
+            SiteTransferService.ExportResult r = transfer.export(site.getId(), actor.login(), dir.resolve(site.getName() + ".zip"), ctx::log);
+            entries.add(entry(r));
+            bytes += r.bytes();
+            ctx.progress((i + 1) * 100 / sites.size());
+            write(new BackupInfo(id, Kind.FARM, "Farm backup (in progress)", Instant.now(), actor.login(), entries, true, bytes, scheduled, true));
+        }
+        write(new BackupInfo(id, Kind.FARM, "Farm backup: " + sites.size() + " sites", Instant.now(), actor.login(),
+                entries, true, bytes, scheduled, false));
+        return Map.of("backupId", id, "sites", sites.size(), "bytes", bytes);
+    }
+
+    /**
+     * Removes older scheduled backups after a successful one, so a run of failures can never cost the good copies.
+     * Backups started by hand are never touched. What failed runs left behind goes too.
+     */
+    private void prune(String current, int keep, CurrentUser actor, JobService.Context ctx) throws IOException {
+        int kept = 1; // the one just made
+        for (BackupInfo b : list()) { // newest first
+            if (!b.scheduled() || b.id().equals(current)) continue;
+            if (!b.partial() && ++kept <= keep) continue;
+            deleteTree(dir(b.id()));
+            audit.record(actor, "BACKUP_DELETE", null, Map.of("backup", b.id()));
+            ctx.log("Removed the older backup " + b.id());
+        }
     }
 
     /** Stores an uploaded site package (an export from this or another farm) so it can be restored. */
@@ -148,7 +181,7 @@ public class BackupService {
         BackupInfo info = new BackupInfo(id, Kind.UPLOAD, "Imported package " + (fileName == null ? "" : fileName).strip(),
                 Instant.now(), actor.login(),
                 List.of(new SiteEntry(pkg.site().name(), pkg.site().title(), file.getFileName().toString(), Files.size(file),
-                        pkg.nodes().size(), versions)), false, Files.size(file));
+                        pkg.nodes().size(), versions)), false, Files.size(file), false, false);
         write(info);
         return info;
     }

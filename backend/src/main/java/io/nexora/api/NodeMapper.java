@@ -66,6 +66,8 @@ public class NodeMapper {
         Map<UUID, String> labels = new HashMap<>();
         versions.findAllById(versionIds).forEach(v -> labels.put(v.getId(), v.label()));
         Map<UUID, PermissionLevel> levels = permissions.levels(user, nodes);
+        Map<UUID, FileVersion> published = permissions.publishedViews(user, nodes);
+        Map<UUID, Principal> publishers = identity.byIds(published.values().stream().map(FileVersion::getCreatedBy).toList());
         // the latest request decides the badge
         Map<UUID, io.nexora.workflow.Approval> latest = new HashMap<>();
         List<UUID> approvable = nodes.stream().filter(n -> n.getKind() == Node.Kind.FILE || n.getKind() == Node.Kind.LIST_ITEM).map(Node::getId).toList();
@@ -77,18 +79,20 @@ public class NodeMapper {
         for (Node n : nodes) {
             PermissionLevel level = levels.get(n.getId());
             boolean mine = n.isCheckedOut() && n.getCheckedOutBy().equals(user.id());
+            FileVersion shown = published.get(n.getId()); // nothing about a newer draft reaches someone who may not see it
             out.add(new NodeDto(
                     n.getId(), n.getKind(), n.getName(), n.getTitle(), n.getDescription(), n.getPath(),
                     n.getParentId(), n.getSiteId(),
-                    mine && n.getWorkingSizeBytes() != null ? n.getWorkingSizeBytes() : n.getSizeBytes(),
-                    n.getMimeType(),
-                    n.getCurrentVersionId() == null ? null : labels.get(n.getCurrentVersionId()),
+                    shown != null ? Long.valueOf(shown.getSizeBytes()) : mine && n.getWorkingSizeBytes() != null ? n.getWorkingSizeBytes() : n.getSizeBytes(),
+                    shown != null ? shown.getMimeType() : n.getMimeType(),
+                    shown != null ? shown.label() : n.getCurrentVersionId() == null ? null : labels.get(n.getCurrentVersionId()),
                     PrincipalRef.of(people.get(n.getCheckedOutBy())), n.getCheckedOutAt(),
                     mine && n.getWorkingStorageKey() != null,
                     locks.containsKey(n.getId()) ? PrincipalRef.of(people.get(locks.get(n.getId()).getOwnerId())) : null,
                     locks.containsKey(n.getId()) ? locks.get(n.getId()).getExpiresAt() : null,
                     PrincipalRef.of(people.get(n.getCreatedBy())), n.getCreatedAt(),
-                    PrincipalRef.of(people.get(n.getModifiedBy())), n.getModifiedAt(),
+                    shown != null ? PrincipalRef.of(publishers.get(shown.getCreatedBy())) : PrincipalRef.of(people.get(n.getModifiedBy())),
+                    shown != null ? shown.getCreatedAt() : n.getModifiedAt(),
                     user.anonymous() ? metadataForVisitor(n) : n.getMetadata(), n.isInheritsPermissions(),
                     level, level == null ? Set.of() : level.rights(),
                     latest.containsKey(n.getId()) ? latest.get(n.getId()).getKind() + ":" + latest.get(n.getId()).getStatus() : null));
@@ -96,10 +100,11 @@ public class NodeMapper {
         return out;
     }
 
-    public List<Dtos.VersionDto> versions(Node file, List<FileVersion> history) {
+    public List<Dtos.VersionDto> versions(CurrentUser user, Node file, List<FileVersion> history) {
         Map<UUID, Principal> people = identity.byIds(history.stream().map(FileVersion::getCreatedBy).toList());
+        UUID current = permissions.publishedView(user, file).map(FileVersion::getId).orElse(file.getCurrentVersionId());
         return history.stream()
-                .map(v -> Dtos.VersionDto.of(v, file.getCurrentVersionId(), people.get(v.getCreatedBy())))
+                .map(v -> Dtos.VersionDto.of(v, current, people.get(v.getCreatedBy())))
                 .toList();
     }
 }

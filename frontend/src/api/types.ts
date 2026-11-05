@@ -89,6 +89,7 @@ export interface LibrarySettings {
   minorVersionsEnabled: boolean;
   requireCheckout: boolean;
   maxVersions?: number | null;
+  draftVisibility?: "READERS" | "EDITORS";
 }
 
 export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON" | "LOOKUP";

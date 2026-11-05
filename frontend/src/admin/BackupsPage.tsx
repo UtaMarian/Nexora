@@ -10,10 +10,13 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
+  Dropdown,
   Field,
   Input,
   MessageBar,
   MessageBarBody,
+  Option,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -30,7 +33,7 @@ import { api, postFile } from "../api/client";
 import { Empty, ErrorBar, Loading } from "../components/States";
 import { formatDate, formatSize } from "../components/format";
 import { JobDialog } from "./JobsPage";
-import type { Backup, Job } from "./types";
+import type { Backup, BackupSchedule, Job } from "./types";
 
 const KINDS = { SITE: "Site", FARM: "Farm", UPLOAD: "Imported" } as const;
 
@@ -100,6 +103,7 @@ export function BackupsPage() {
           Farm backups contain every file and local account password hashes. Keep the backup folder as private as the database, and copy it off this server.
         </MessageBarBody>
       </MessageBar>
+      <ScheduleCard />
       <ErrorBar error={error ?? backups.error} />
       {backups.isPending ? <Loading /> : !backups.data?.length ? <Empty title="No backups yet" /> : (
         <div style={{ overflowX: "auto" }}>
@@ -107,7 +111,7 @@ export function BackupsPage() {
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>Backup</TableHeaderCell>
-                <TableHeaderCell style={{ width: 90 }}>Type</TableHeaderCell>
+                <TableHeaderCell style={{ width: 150 }}>Type</TableHeaderCell>
                 <TableHeaderCell style={{ width: 90 }}>Size</TableHeaderCell>
                 <TableHeaderCell style={{ width: 170 }}>Created</TableHeaderCell>
                 <TableHeaderCell style={{ width: 160 }} aria-label="Actions" />
@@ -122,7 +126,10 @@ export function BackupsPage() {
                       {b.sites.length} site{b.sites.length === 1 ? "" : "s"}{b.includesDirectory ? ", users and groups" : ""}
                     </Text>
                   </TableCell>
-                  <TableCell><Badge appearance="tint">{KINDS[b.kind]}</Badge></TableCell>
+                  <TableCell>
+                    <Badge appearance="tint">{KINDS[b.kind]}</Badge>
+                    {b.scheduled && <Badge appearance="outline" size="small" style={{ marginLeft: 4 }}>Scheduled</Badge>}
+                  </TableCell>
                   <TableCell>{formatSize(b.sizeBytes)}</TableCell>
                   <TableCell>{formatDate(b.createdAt)} by {b.createdBy}</TableCell>
                   <TableCell>
@@ -142,6 +149,79 @@ export function BackupsPage() {
       {restoring && <RestoreDialog backup={restoring} onClose={() => setRestoring(null)} onStarted={(id) => { setRestoring(null); setJob(id); }} />}
       {job && <JobDialog id={job} onClose={() => { setJob(null); void qc.invalidateQueries({ queryKey: ["admin"] }); }} />}
     </>
+  );
+}
+
+const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+const dayName = (day: string) => day[0] + day.slice(1).toLowerCase();
+
+function ScheduleCard() {
+  const qc = useQueryClient();
+  const saved = useQuery({
+    queryKey: ["admin", "backup-schedule"],
+    queryFn: () => api<BackupSchedule>("/api/v1/admin/backups/schedule"),
+    refetchInterval: 30000,
+  });
+  const [draft, setDraft] = useState<BackupSchedule | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const s = draft ?? saved.data;
+  if (!s) return <ErrorBar error={saved.error} />;
+  const change = (patch: Partial<BackupSchedule>) => setDraft({ ...s, ...patch });
+  const last = saved.data?.lastRun;
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/v1/admin/backups/schedule", {
+        method: "PUT",
+        body: { enabled: s.enabled, frequency: s.frequency, hour: s.hour, day: s.day, keep: s.keep },
+      });
+      setDraft(null);
+      await qc.invalidateQueries({ queryKey: ["admin", "backup-schedule"] });
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: 6, padding: 12, margin: "0 0 12px" }}>
+      <Text weight="semibold" block>Scheduled farm backup</Text>
+      <ErrorBar error={error} />
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+        <Switch checked={s.enabled} label={s.enabled ? "On" : "Off"} onChange={(_, d) => change({ enabled: d.checked })} />
+        <Field label="How often">
+          <Dropdown value={s.frequency === "DAILY" ? "Every day" : "Every week"} selectedOptions={[s.frequency]} style={{ minWidth: 130 }}
+            onOptionSelect={(_, d) => change({ frequency: d.optionValue as BackupSchedule["frequency"] })}>
+            <Option value="DAILY">Every day</Option>
+            <Option value="WEEKLY">Every week</Option>
+          </Dropdown>
+        </Field>
+        {s.frequency === "WEEKLY" && (
+          <Field label="Day">
+            <Dropdown value={dayName(s.day)} selectedOptions={[s.day]} style={{ minWidth: 130 }} onOptionSelect={(_, d) => change({ day: d.optionValue ?? s.day })}>
+              {DAYS.map((day) => <Option key={day} value={day}>{dayName(day)}</Option>)}
+            </Dropdown>
+          </Field>
+        )}
+        <Field label="Hour (UTC)">
+          <Input type="number" min={0} max={23} value={String(s.hour)} style={{ width: 90 }} onChange={(_, d) => change({ hour: Number(d.value) })} />
+        </Field>
+        <Field label="Backups to keep">
+          <Input type="number" min={1} max={365} value={String(s.keep)} style={{ width: 90 }} onChange={(_, d) => change({ keep: Number(d.value) })} />
+        </Field>
+        <Button appearance="primary" disabled={busy || !draft} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</Button>
+      </div>
+      <Text block size={200} style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }} aria-live="polite">
+        {saved.data?.enabled && saved.data.nextRun ? `Next run ${formatDate(saved.data.nextRun)}. ` : "Backups are started by hand. "}
+        {last && (last.status === "FAILED" ? `The last run failed: ${last.message ?? "see Jobs"}.`
+          : last.finishedAt ? `Last run ${formatDate(last.finishedAt)}: ${last.status.toLowerCase()}.` : "A backup is running.")}
+        {" "}Older scheduled backups are removed only after a new one succeeds. Backups started by hand are kept.
+      </Text>
+    </div>
   );
 }
 

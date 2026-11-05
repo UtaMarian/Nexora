@@ -60,6 +60,16 @@ export interface Overview {
   runningJobs: Job[];
 }
 
+export interface BackupSchedule {
+  enabled: boolean;
+  frequency: "DAILY" | "WEEKLY";
+  hour: number;
+  day: string;
+  keep: number;
+  nextRun?: string;
+  lastRun?: { jobId: string; status: JobStatus; message?: string; finishedAt?: string };
+}
+
 export interface SiteRow {
   id: string;
   name: string;
@@ -73,6 +83,9 @@ export interface SiteRow {
   lastModified: string;
   owners: string[];
   subsite: boolean;
+  quotaBytes?: number;
+  quotaWarnBytes?: number;
+  quotaUsedBytes?: number;
   hub: boolean;
 }
 
@@ -94,6 +107,8 @@ export interface Backup {
   sites: BackupSite[];
   includesDirectory: boolean;
   sizeBytes: number;
+  scheduled?: boolean;
+  partial?: boolean;
 }
 
 export interface LogEntry {

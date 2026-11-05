@@ -119,7 +119,8 @@ The queue lives in PostgreSQL in the same transaction as each change, so an outa
 - **Not load-tested.** It has only run on small data sets. The 500 ms target on 10 million documents is unproven.
 - **The bundled OpenSearch is a single node with its security plugin off.** The Docker network is its only protection.
   Use a secured cluster if other software shares that network.
-- **Only the current version is searched.** Older versions and checked-out drafts are not.
+- **Only the current version is searched.** Older versions and checked-out drafts are not. Where a library
+  [hides drafts](administration.md#who-can-see-drafts), the latest published version is searched instead, for everyone.
 - **Facets choose one value each.**
 - **A deleted column's values stay searchable** on items that still hold them, until those items are edited and rebuilt.
 - **OCR quality is unmeasured on real scans.** It was tested on clean, generated images.

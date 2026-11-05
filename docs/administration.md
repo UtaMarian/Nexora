@@ -6,8 +6,8 @@ Farm administrators open **Central Administration** from the top bar (`/admin`).
 | Page | What it does |
 | --- | --- |
 | Overview | Counts, storage, health of database, storage, Collabora, directory sync and backup folder, server status |
-| Sites | Every site and subsite with owners, size and last change; create (template and owner), back up, delete, turn a site into a hub. See [intranet.md](intranet.md) |
-| Backup and restore | Farm backup, site restore, package download and import |
+| Sites | Every site and subsite with owners, size and last change; create (template and owner), back up, delete, set a storage limit, turn a site into a hub. See [intranet.md](intranet.md) |
+| Backup and restore | Farm backup, schedule, site restore, package download and import |
 | SharePoint migration | Connect farms, scan, copy, delta sync, test old links |
 | Search | Health, work waiting, unreadable documents, rebuild the index. See [search.md](search.md) |
 | Sharing and email | Active links, the switch for links without sign-in, the switch for [anonymous access](anonymous-access.md), email status and test message. See [lists-sharing-alerts.md](lists-sharing-alerts.md) |
@@ -34,8 +34,88 @@ logo. A **farm backup** is one package per site plus `directory.json` with users
 - File content is verified against its checksum, and a damaged package stops the restore with nothing created.
 - `directory.json` contains password hashes of local accounts. Treat the backup folder like the database, and
   copy it off the server: a volume on the same host does not protect against losing that host.
-- Backups are started by hand. There is no scheduler yet. For point-in-time recovery of a large farm, also use
-  `pg_dump` or snapshots of the database and object store.
+- For point-in-time recovery of a large farm, also use `pg_dump` or snapshots of the database and object store.
+
+### Scheduled backups
+
+**Backup and restore > Scheduled farm backup** runs a farm backup every day or every week, at an hour you choose in UTC.
+It is off until you turn it on.
+
+- **Backups to keep** counts scheduled backups only. Older ones are removed after a new one succeeds, so a run of
+  failures never costs you the good copies. Backups started by hand and imported packages are never removed.
+- If everything was down at the chosen time, the backup runs once at the next start.
+- If the previous scheduled backup is still running, that run is skipped and the log says so.
+- Servers sharing a database start one backup between them.
+- A failed run shows on this page and as a warning under Health. It sends no email, so check Health.
+- Backups stay in `NEXORA_BACKUP_DIR`. The schedule does not copy them off the server, so do that separately.
+- The backups are named after the administrator who saved the schedule. That person leaving does not stop them. If
+  their account is removed altogether, runs are skipped with an error in the log until someone saves the schedule again.
+
+## Site storage limits
+
+A farm administrator sets a limit from the storage button on the **Sites** page, as with SharePoint's site collection
+quotas. Sites have no limit until you set one.
+
+The limit is on a top-level site, and subsites count towards it. It covers:
+
+- every version of every file, and attachments;
+- private drafts of checked-out files;
+- the recycle bin, until it is emptied. Deleting a file does not free space on its own.
+
+Identical content counts once within a site, so publishing a draft or restoring a version costs nothing. The figure can
+therefore be lower than the sum of all versions, and differs from the farm's disk use, which also de-duplicates between
+sites.
+
+At the limit, new content is refused with HTTP 507 in the web app, over WebDAV and from the browser editor, and moves
+from other sites are refused too. People can still read, delete and empty the recycle bin. Empty files are allowed,
+because Windows Explorer creates a file empty before uploading it.
+
+The optional warning level emails the site's owners once. It rearms when usage falls back below that level. Owners who
+are members through a group are not emailed.
+
+Known limits:
+
+- Migration, restore and import are not checked, so a site can end up over its limit. Uploads are then refused.
+- Two uploads at the same moment can both pass, so a site can overshoot by the size of one upload.
+- Limits are not stored in backups, so a restored site has none.
+- There is no default limit for new sites, and owners cannot see their usage. They only get the warning and the refusal.
+- Usage is added up on each write to a site with a limit, and this has not been measured on a large site.
+
+## Who can see drafts
+
+In a library that uses minor versions, **Library settings > Who can see drafts** decides who sees versions like 0.1 and
+1.1, as in SharePoint. *Anyone who can read* is the default. With *Only people who can edit*, people who hold Read get
+the latest major version instead, and a file that was never published does not exist for them.
+
+| Way in | What someone with Read gets |
+| --- | --- |
+| Libraries, Recent, Shared with me, search results | The published size, date, author and version. Files never published are left out |
+| Download, version history | The published version, and major versions only |
+| Mapped drive and Open in Word | The published version |
+| Browser editor | A separate read-only copy of the published version, not the live editing session |
+| Share links | The published version. Files never published are left out, whoever made the link |
+| Alerts | No email about changes to a draft |
+| Search | Published text only |
+
+Keep these in mind:
+
+- **Search works on published text for everyone in that library, editors included.** A file that was never published
+  cannot be found by anyone until it is. The index holds one copy of each document, so it cannot differ by person.
+- **Approvers need Contribute or higher.** An approval covers the draft, so someone who cannot see it is refused as an
+  approver, and rules asking them fail under What happened.
+- **Columns are not versioned.** Changes to a file's name and columns show at once.
+- People with Read can still see that a file is checked out, and its approval badge.
+- Version limits never remove a file's only published version while a draft is current.
+- SharePoint's third choice, *only approvers and the author*, is not offered, because NEXORA has no separate approve
+  right. Migration maps it and the author-only setting to *Only people who can edit*.
+- Changing the setting updates search in the background, so results can lag for a moment.
+
+### Testing status
+
+These three features have automated tests on H2 and the filesystem store, like the rest of the suite. Their PostgreSQL
+migration and storage queries have not run against a real PostgreSQL yet. The separate read-only view of the browser
+editor is tested at the WOPI level and has not been tried with a real Collabora, so check that it opens before relying
+on it.
 
 ## SharePoint migration
 

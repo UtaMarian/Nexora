@@ -52,6 +52,7 @@ Status: ✅ works, ⚠️ works with an important limit.
 | --- | --- |
 | Libraries, folders, multi-file and drag-and-drop upload, download, rename, move | ✅ |
 | Major and minor (draft) versions, publish, history, restore, delete, version limits | ✅ |
+| Who can see drafts, per library: anyone who can read, or only people who can edit. The read-only browser view is not yet tried against a real Collabora. See [docs/administration.md](docs/administration.md#who-can-see-drafts) | ⚠️ |
 | Check-out with a private draft, check-in, discard, and "require check-out" libraries | ✅ |
 | New Word, Excel and PowerPoint files, blank or from the site's Templates library | ✅ |
 | Custom columns: text, note, number, date, yes/no, choice, hyperlink, person, lookup | ✅ |
@@ -112,6 +113,8 @@ Status: ✅ works, ⚠️ works with an important limit.
 | --- | --- |
 | Central Administration at `/admin`: overview, health, sites, jobs, logs, users, directory, settings. See [docs/administration.md](docs/administration.md) | ✅ |
 | Site and farm backup, restore under any URL, site export and import between farms | ✅ |
+| Scheduled farm backups, daily or weekly, keeping the newest few | ✅ |
+| Storage limits on sites, with a warning email to owners. See [docs/administration.md](docs/administration.md#site-storage-limits) | ✅ |
 | SharePoint migration: scan, copy with versions, metadata and permissions, delta sync, old-link redirects. **Tested against a simulated farm only** | ⚠️ |
 | REST API at `/api/v1`, OpenAPI spec at `/v3/api-docs`, Swagger UI at `/swagger-ui.html` | ✅ |
 | Health probes at `/actuator/health` on the API port | ✅ |
@@ -219,7 +222,7 @@ findings below come from reading the code.
 | Search servers | OpenSearch and Tika | Yes, through one address. The index needs its replica count raised from the current 0 |
 | Office Online Server | Collabora Online | Yes, if each document is routed to one instance |
 | AD, ADFS | Keycloak | Yes, it has its own clustering |
-| Central Administration | `/admin` | Reachable on every server, but logs and health show one server |
+| Central Administration | `/admin` | Reachable on every server, but logs and health show one server. A scheduled backup starts once, however many servers share the database |
 | "Join farm" wizard | Start another `backend` with the same settings | No wizard, and no list of servers in the farm |
 
 ### Target design
@@ -383,9 +386,7 @@ NEXORA_TEST_OPENSEARCH_URL=http://localhost:9200 NEXORA_TEST_TIKA_URL=http://loc
 - Retention, records management, eDiscovery and legal holds.
 - BPMN workflows and custom forms. The rule engine has no branches or long-running processes.
 - Calculated columns, and item-level list security.
-- Draft visibility: readers can currently see the latest version, published or not.
 - A OneDrive-style sync client, and the SharePoint REST compatibility layer.
-- Scheduled backups, which are started by hand today.
 - Rate limiting, which matters if a public site faces the internet.
 - Prometheus metrics: `application.yml` lists the endpoint, but the Micrometer Prometheus library is not installed.
 

@@ -75,14 +75,21 @@ public class NodeController {
     public LibrarySettingsDto settings(@PathVariable UUID id) {
         CurrentUser user = CurrentUser.get();
         LibrarySettings s = LibrarySettings.of(content.libraryOf(content.get(user, id)));
-        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions());
+        return dto(s);
     }
 
     @PutMapping("/nodes/{id}/settings")
     public LibrarySettingsDto updateSettings(@PathVariable UUID id, @RequestBody LibrarySettingsDto body) {
-        LibrarySettings s = content.updateLibrarySettings(CurrentUser.get(), id, new LibrarySettings(
-                body.versioningEnabled(), body.minorVersionsEnabled(), body.requireCheckout(), body.maxVersions()));
-        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions());
+        CurrentUser user = CurrentUser.get();
+        // a caller that does not know the field must not reopen a library's drafts
+        LibrarySettings.DraftVisibility drafts = body.draftVisibility() != null ? body.draftVisibility()
+                : LibrarySettings.of(content.libraryOf(content.get(user, id))).draftVisibility();
+        return dto(content.updateLibrarySettings(user, id, new LibrarySettings(
+                body.versioningEnabled(), body.minorVersionsEnabled(), body.requireCheckout(), body.maxVersions(), drafts)));
+    }
+
+    private static LibrarySettingsDto dto(LibrarySettings s) {
+        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions(), s.draftVisibility());
     }
 
     @GetMapping("/nodes/{id}/columns")

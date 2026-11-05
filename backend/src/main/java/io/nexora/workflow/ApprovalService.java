@@ -146,7 +146,7 @@ public class ApprovalService {
         List<Approval> out = new ArrayList<>();
         for (Approval a : approvals.waitingFor(mine)) {
             Node node = nodes.findLive(a.getNodeId()).orElse(null);
-            if (node != null && permissions.has(user, node, Right.VIEW) && canDecide(user, a, steps.findByApprovalIdOrderByPosition(a.getId()), mine)) out.add(a);
+            if (node != null && permissions.seesLatest(user, node) && canDecide(user, a, steps.findByApprovalIdOrderByPosition(a.getId()), mine)) out.add(a);
         }
         return out;
     }
@@ -200,6 +200,7 @@ public class ApprovalService {
         List<ApprovalStep> all = steps.findByApprovalIdOrderByPosition(a.getId());
         ApprovalStep step = stepFor(user, a, all, permissions.principalIds(user));
         if (step == null) throw ApiException.forbidden("This is not waiting for your answer");
+        if (!permissions.seesLatest(user, node)) throw ApiException.forbidden("You cannot see the draft this request is about");
         if (!approve && (comment == null || comment.isBlank())) {
             throw ApiException.badRequest("comment_required", "Say what needs to change");
         }
@@ -384,7 +385,7 @@ public class ApprovalService {
     }
 
     private boolean canSee(Principal p, Node node) {
-        return permissions.effectiveLevel(new CurrentUser(p.getId(), p.getLogin(), p.getDisplayName(), p.isAdmin()), node) != null;
+        return permissions.seesLatest(new CurrentUser(p.getId(), p.getLogin(), p.getDisplayName(), p.isAdmin()), node);
     }
 
     private static String name(Node n) {

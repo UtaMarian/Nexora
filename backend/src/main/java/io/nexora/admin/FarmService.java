@@ -5,6 +5,7 @@ import io.nexora.common.ApiException;
 import io.nexora.content.ContentService;
 import io.nexora.content.Node;
 import io.nexora.content.NodeRepository;
+import io.nexora.content.QuotaService;
 import io.nexora.identity.CurrentUser;
 import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
@@ -52,12 +53,17 @@ public class FarmService {
     private final SearchAdminService search;
     private final MailService mail;
     private final Environment env;
+    private final BackupScheduler schedule;
+    private final QuotaService quotas;
 
     public FarmService(EntityManager em, DataSource dataSource, BlobStore store, StorageProperties storage,
                        ObjectProvider<WopiDiscovery> office, ObjectProvider<DirectorySyncService> directory,
                        NodeRepository nodes, PrincipalRepository principals, GroupMemberRepository members,
                        ContentService content, PortalService portal, BackupService backups, JobService jobs,
-                       AuditService audit, SearchAdminService search, MailService mail, Environment env) {
+                       AuditService audit, SearchAdminService search, MailService mail, Environment env,
+                       BackupScheduler schedule, QuotaService quotas) {
+        this.schedule = schedule;
+        this.quotas = quotas;
         this.em = em;
         this.dataSource = dataSource;
         this.store = store;
@@ -84,7 +90,7 @@ public class FarmService {
 
     public record SiteRow(UUID id, String name, String path, String title, String description, String template,
                           long files, long bytes, Instant createdAt, Instant lastModified, List<String> owners,
-                          boolean subsite, boolean hub) {}
+                          boolean subsite, boolean hub, Long quotaBytes, Long quotaWarnBytes, Long quotaUsedBytes) {}
 
     // ---- overview ------------------------------------------------------------------------------
 
@@ -177,6 +183,14 @@ public class FarmService {
         } catch (Exception e) {
             out.add(new Health("Backup folder", "ERROR", e.getMessage()));
         }
+        BackupScheduler.Schedule plan = schedule.schedule();
+        if (!plan.enabled()) {
+            out.add(new Health("Scheduled backup", "DISABLED", "Backups are started by hand"));
+        } else {
+            boolean failed = plan.lastRun() != null && plan.lastRun().status() == AdminJob.Status.FAILED;
+            out.add(new Health("Scheduled backup", failed ? "WARNING" : "OK",
+                    failed ? "The last run failed: " + plan.lastRun().message() : "Next run " + plan.nextRun()));
+        }
         return out;
     }
 
@@ -192,8 +206,10 @@ public class FarmService {
             stats.put((UUID) row[0], row);
         }
         List<SiteRow> out = new ArrayList<>();
+        Map<UUID, QuotaService.Usage> limits = quotas.all();
         for (Node s : nodes.findLiveSites()) {
             Object[] st = stats.get(s.getId());
+            QuotaService.Usage limit = limits.get(s.getId());
             List<String> owners = principals.findByKindAndLogin(Principal.Kind.GROUP, s.groupPrefix() + "-owners")
                     .map(g -> {
                         List<UUID> ids = members.findByGroupId(g.getId()).stream().map(GroupMember::getMemberId).toList();
@@ -203,7 +219,9 @@ public class FarmService {
             out.add(new SiteRow(s.getId(), s.getName(), s.getPath(), s.getTitle(), s.getDescription(),
                     Objects.toString(s.getSettings().get("template"), null),
                     st == null ? 0 : (Long) st[1], st == null ? 0 : ((Number) st[2]).longValue(),
-                    s.getCreatedAt(), last, owners, s.getParentId() != null, io.nexora.portal.HubService.isHub(s)));
+                    s.getCreatedAt(), last, owners, s.getParentId() != null, io.nexora.portal.HubService.isHub(s),
+                    limit == null ? null : limit.maxBytes(), limit == null ? null : limit.warnBytes(),
+                    limit == null ? null : limit.usedBytes()));
         }
         return out;
     }

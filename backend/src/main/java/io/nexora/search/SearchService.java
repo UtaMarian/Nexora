@@ -112,8 +112,10 @@ public class SearchService {
         List<Node> toCheck = new ArrayList<>(found.values());
         toCheck.addAll(sites.values());
         Map<UUID, PermissionLevel> levels = permissions.levels(user, toCheck);
+        Map<UUID, io.nexora.content.FileVersion> published = permissions.publishedViews(user, found.values());
 
         Set<UUID> people = new HashSet<>();
+        published.values().forEach(v -> people.add(v.getCreatedBy()));
         found.values().forEach(n -> people.add(n.getModifiedBy()));
         foundPages.values().forEach(p -> people.add(p.getPublishedBy() != null ? p.getPublishedBy() : p.getModifiedBy()));
         people.remove(null);
@@ -127,9 +129,13 @@ public class SearchService {
             if (n != null) {
                 if (!levels.containsKey(n.getId())) continue;
                 Node site = sites.get(n.getSiteId());
+                io.nexora.content.FileVersion shown = published.get(n.getId());
                 out.add(new Hit(n.getId(), n.getKind().name(), n.getTitle() != null ? n.getTitle() : n.getName(),
-                        n.getName(), n.getPath(), site == null ? null : site.getTitle(), snippet, n.getModifiedAt(),
-                        names.get(n.getModifiedBy()), n.getSizeBytes(), n.getMimeType()));
+                        n.getName(), n.getPath(), site == null ? null : site.getTitle(), snippet,
+                        shown != null ? shown.getCreatedAt() : n.getModifiedAt(),
+                        names.get(shown != null ? shown.getCreatedBy() : n.getModifiedBy()),
+                        shown != null ? Long.valueOf(shown.getSizeBytes()) : n.getSizeBytes(),
+                        shown != null ? shown.getMimeType() : n.getMimeType()));
                 continue;
             }
             SitePage p = foundPages.get(h.id());

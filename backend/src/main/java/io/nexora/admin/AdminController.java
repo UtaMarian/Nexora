@@ -4,6 +4,7 @@ import io.nexora.api.Dtos.PrincipalRef;
 import io.nexora.audit.AuditService;
 import io.nexora.common.ApiException;
 import io.nexora.content.Node;
+import io.nexora.content.QuotaService;
 import io.nexora.identity.CurrentUser;
 import io.nexora.identity.IdentityService;
 import io.nexora.identity.Principal;
@@ -41,9 +42,14 @@ public class AdminController {
     private final IdentityService identity;
     private final PrincipalRepository principals;
     private final AuditService audit;
+    private final BackupScheduler schedule;
+    private final QuotaService quotas;
 
     public AdminController(FarmService farm, BackupService backups, JobService jobs, LogBuffer logs,
-                           IdentityService identity, PrincipalRepository principals, AuditService audit) {
+                           IdentityService identity, PrincipalRepository principals, AuditService audit,
+                           BackupScheduler schedule, QuotaService quotas) {
+        this.schedule = schedule;
+        this.quotas = quotas;
         this.farm = farm;
         this.backups = backups;
         this.jobs = jobs;
@@ -65,6 +71,8 @@ public class AdminController {
                           boolean directory, Instant createdAt) {}
 
     public record UserPatch(Boolean enabled, Boolean admin) {}
+
+    public record QuotaRequest(@jakarta.validation.constraints.NotNull Long maxBytes, Long warnBytes) {}
 
     // ---- overview ----
 
@@ -103,6 +111,17 @@ public class AdminController {
         farm.deleteSite(CurrentUser.get(), id);
     }
 
+    @PutMapping("/sites/{id}/quota")
+    public QuotaService.Usage setQuota(@PathVariable UUID id, @jakarta.validation.Valid @RequestBody QuotaRequest body) {
+        return quotas.set(CurrentUser.get(), id, body.maxBytes(), body.warnBytes());
+    }
+
+    @DeleteMapping("/sites/{id}/quota")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeQuota(@PathVariable UUID id) {
+        quotas.remove(CurrentUser.get(), id);
+    }
+
     @PostMapping("/sites/{id}/backup")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public JobDto backupSite(@PathVariable UUID id) {
@@ -114,6 +133,16 @@ public class AdminController {
     @GetMapping("/backups")
     public List<BackupService.BackupInfo> backups() throws IOException {
         return backups.list();
+    }
+
+    @GetMapping("/backups/schedule")
+    public BackupScheduler.Schedule backupSchedule() {
+        return schedule.schedule();
+    }
+
+    @PutMapping("/backups/schedule")
+    public BackupScheduler.Schedule saveBackupSchedule(@RequestBody BackupScheduler.ScheduleRequest body) {
+        return schedule.save(CurrentUser.get(), body);
     }
 
     @PostMapping("/backups/farm")

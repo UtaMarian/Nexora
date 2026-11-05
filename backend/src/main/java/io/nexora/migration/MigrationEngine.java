@@ -216,7 +216,7 @@ public class MigrationEngine {
 
     private List<JsonNode> lists(SharePointClient sp, String webPath) throws IOException {
         return sp.all(sp.web(webPath, "/_api/web/lists?$select=Id,Title,Description,BaseTemplate,BaseType,Hidden,ItemCount,"
-                + "HasUniqueRoleAssignments,EnableVersioning,EnableMinorVersions,RootFolder/ServerRelativeUrl,RootFolder/Name"
+                + "HasUniqueRoleAssignments,EnableVersioning,EnableMinorVersions,DraftVersionVisibility,RootFolder/ServerRelativeUrl,RootFolder/Name"
                 + "&$expand=RootFolder&$filter=" + query("Hidden eq false")));
     }
 
@@ -302,7 +302,8 @@ public class MigrationEngine {
             n.setTitle(list.path("Title").asText(name));
             n.setDescription(blankToNull(list.path("Description").asText(null)));
             new LibrarySettings(list.path("EnableVersioning").asBoolean(true), list.path("EnableMinorVersions").asBoolean(false),
-                    false, null).applyTo(n);
+                    false, null, list.path("DraftVersionVisibility").asInt(0) == 0
+                            ? LibrarySettings.DraftVisibility.READERS : LibrarySettings.DraftVisibility.EDITORS).applyTo(n);
             lockIfRestricted(run, n, list.path("HasUniqueRoleAssignments").asBoolean());
             nodes.save(n);
             map(run, "LIBRARY", listId, rootUrl, n, null, null);

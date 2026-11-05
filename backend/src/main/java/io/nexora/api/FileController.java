@@ -111,7 +111,7 @@ public class FileController {
     public List<VersionDto> versions(@PathVariable UUID id) {
         CurrentUser user = CurrentUser.get();
         Node file = documents.requireFile(user, id);
-        return mapper.versions(file, documents.history(user, id));
+        return mapper.versions(user, file, documents.history(user, id));
     }
 
     @PostMapping("/versions/{versionId}/restore")

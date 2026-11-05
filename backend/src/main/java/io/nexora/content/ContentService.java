@@ -44,14 +44,16 @@ public class ContentService {
     private final SearchQueue search;
     private final ItemHistory itemHistory;
     private final ItemVersionRepository itemVersions;
+    private final QuotaService quotas;
     private final boolean selfServiceSites;
 
     public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                           PrincipalRepository principals, GroupMemberRepository members,
                           PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
                           EditLockService editLocks, SearchQueue search, ItemHistory itemHistory,
-                          ItemVersionRepository itemVersions,
+                          ItemVersionRepository itemVersions, QuotaService quotas,
                           @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
+        this.quotas = quotas;
         this.editLocks = editLocks;
         this.search = search;
         this.itemHistory = itemHistory;
@@ -336,12 +338,15 @@ public class ContentService {
         if (settings.maxVersions() != null && settings.maxVersions() < 1) {
             throw ApiException.badRequest("invalid_settings", "maxVersions must be at least 1");
         }
+        boolean hidDrafts = LibrarySettings.of(lib).hidesDrafts();
         settings.applyTo(lib);
+        if (hidDrafts != settings.hidesDrafts()) search.subtree(lib.getId()); // the index must hold what readers may find
         lib.touch(user.id());
         audit.record(user, "LIBRARY_SETTINGS_UPDATE", lib, Map.of(
                 "versioningEnabled", settings.versioningEnabled(),
                 "minorVersionsEnabled", settings.minorVersionsEnabled(),
-                "requireCheckout", settings.requireCheckout()));
+                "requireCheckout", settings.requireCheckout(),
+                "draftVisibility", settings.draftVisibility().name()));
         return settings;
     }
 
@@ -421,6 +426,7 @@ public class ContentService {
         permissions.require(user, target, Right.ADD_ITEMS);
         assertNotLockedByOthers(user, node);
         assertNoSibling(target, node.getName());
+        quotas.admitMove(node, target);
 
         String oldPath = node.getPath();
         relocate(node, target);

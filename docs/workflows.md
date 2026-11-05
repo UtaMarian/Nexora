@@ -78,6 +78,7 @@ nobody is waiting on a copy.
 - SharePoint workflows are not migrated.
 - Rules cannot set person or lookup columns, and they watch for any change, not a change to one column.
 - Conditions are all-of. There is no "or".
-- Readers can still see an unapproved draft, because draft visibility is not implemented yet.
+- Readers can see an unapproved draft unless the library is set to [hide drafts](administration.md#who-can-see-drafts).
+  In that case approvers need Contribute or higher.
 - If a rule asks for approval from someone who cannot open the item, the run fails. It shows under What happened.
 - Tested with Mailpit and a simulated farm of a few sites, not at production volume.

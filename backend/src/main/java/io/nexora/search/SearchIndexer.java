@@ -241,6 +241,10 @@ public class SearchIndexer {
             out.delete.add(id);
             return;
         }
+        if (documents.unpublished(n)) {
+            out.delete.add(id);
+            return;
+        }
         String content = null;
         if (documents.wantsText(n)) {
             Optional<FileVersion> version = documents.currentVersion(n);

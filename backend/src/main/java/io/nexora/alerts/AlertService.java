@@ -1,6 +1,5 @@
 package io.nexora.alerts;
 
-import io.nexora.acl.PermissionLevel;
 import io.nexora.acl.PermissionService;
 import io.nexora.alerts.Alert.Frequency;
 import io.nexora.common.ApiException;
@@ -179,8 +178,7 @@ public class AlertService {
 
     private boolean canSee(Principal p, Node node) {
         CurrentUser user = new CurrentUser(p.getId(), p.getLogin(), p.getDisplayName(), p.isAdmin());
-        PermissionLevel level = permissions.effectiveLevel(user, node);
-        return level != null;
+        return permissions.seesLatest(user, node); // a change to a draft is news only to those who can see drafts
     }
 
     private static String parentPath(Node node) {

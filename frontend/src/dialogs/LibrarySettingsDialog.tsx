@@ -112,6 +112,19 @@ export function LibrarySettingsDialog({ library, onClose }: { library: NodeDto; 
                   onChange={(_, d) => setDraft({ ...draft, minorVersionsEnabled: d.checked })}
                   label="Create minor (draft) versions that must be published"
                 />
+                {draft.minorVersionsEnabled && (
+                  <Field label="Who can see drafts" hint="Readers get the latest published version. A file that was never published stays hidden from them.">
+                    <Dropdown
+                      value={(draft.draftVisibility ?? "READERS") === "EDITORS" ? "Only people who can edit" : "Anyone who can read"}
+                      selectedOptions={[draft.draftVisibility ?? "READERS"]}
+                      onOptionSelect={(_, d) => setDraft({ ...draft, draftVisibility: d.optionValue as LibrarySettings["draftVisibility"] })}
+                      style={{ maxWidth: 280 }}
+                    >
+                      <Option value="READERS">Anyone who can read</Option>
+                      <Option value="EDITORS">Only people who can edit</Option>
+                    </Dropdown>
+                  </Field>
+                )}
                 <Switch
                   checked={draft.requireCheckout}
                   onChange={(_, d) => setDraft({ ...draft, requireCheckout: d.checked })}

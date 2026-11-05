@@ -37,6 +37,10 @@ public interface NodeRepository extends JpaRepository<Node, UUID> {
     @Query("select n from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.parentId is null and n.deletedAt is null order by lower(n.title)")
     List<Node> findLiveRootSites();
 
+    /** Includes sites in the recycle bin, whose content still takes up space. */
+    @Query("select n.id from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.parentId in :parents")
+    List<UUID> findSubsiteIds(@Param("parents") java.util.Collection<UUID> parents);
+
     @Query("select count(n) > 0 from Node n where n.kind = io.nexora.content.Node.Kind.SITE and n.parentId is null and lower(n.name) = lower(:name)")
     boolean existsSiteName(@Param("name") String name);
 

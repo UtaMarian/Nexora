@@ -27,9 +27,12 @@ public class SearchDocumentBuilder {
     private final FileVersionRepository versions;
     private final PrincipalRepository principals;
     private final PageService pages;
+    private final io.nexora.content.DraftPolicy drafts;
 
     public SearchDocumentBuilder(SearchProperties properties, TextExtractor extractor, PermissionService permissions,
-                                 FileVersionRepository versions, PrincipalRepository principals, PageService pages) {
+                                 FileVersionRepository versions, PrincipalRepository principals, PageService pages,
+                                 io.nexora.content.DraftPolicy drafts) {
+        this.drafts = drafts;
         this.properties = properties;
         this.extractor = extractor;
         this.permissions = permissions;
@@ -38,9 +41,19 @@ public class SearchDocumentBuilder {
         this.pages = pages;
     }
 
-    /** The blob of the version everyone reads. A checked-out draft stays private to its author and is never indexed. */
+    /**
+     * The version everyone reads. A checked-out draft stays private to its author and is never indexed. Where a library
+     * hides drafts this is the latest major version for everyone, editors included: snippets come from the index, which
+     * has one copy of a document and cannot tell readers from editors.
+     */
     public Optional<FileVersion> currentVersion(Node file) {
-        return file.getCurrentVersionId() == null ? Optional.empty() : versions.findById(file.getCurrentVersionId());
+        if (file.getCurrentVersionId() == null) return Optional.empty();
+        return drafts.restricted(file) ? drafts.published(file) : versions.findById(file.getCurrentVersionId());
+    }
+
+    /** A file with no version anyone may find, which must stay out of the index until it is published. */
+    public boolean unpublished(Node n) {
+        return n.getKind() == Node.Kind.FILE && n.getCurrentVersionId() != null && currentVersion(n).isEmpty();
     }
 
     public boolean wantsText(Node node) {
@@ -55,10 +68,15 @@ public class SearchDocumentBuilder {
     public SearchDocument node(Node n, String content) {
         String extension = n.getKind() == Node.Kind.FILE ? extension(n.getName()) : "";
         boolean item = n.getKind() == Node.Kind.LIST_ITEM; // an item's name is only its number
+        // in a library that hides drafts, who last saved and when would give a draft away
+        FileVersion v = n.getKind() == Node.Kind.FILE ? currentVersion(n).orElse(null) : null;
+        UUID modifiedBy = v != null ? v.getCreatedBy() : n.getModifiedBy();
+        Instant modifiedAt = v != null ? v.getCreatedAt() : n.getModifiedAt();
+        long size = v != null ? v.getSizeBytes() : n.getSizeBytes() == null ? 0 : n.getSizeBytes();
         return new SearchDocument(n.getId(), type(n, extension), n.getTitle() != null ? n.getTitle() : n.getName(),
                 item ? "" : n.getName(), item ? "" : words(n.getName()), n.getDescription() == null ? "" : n.getDescription(),
                 columnText(n.getMetadata()), content == null ? "" : content, n.getPath(), siteSlug(n.getPath()), n.getSiteId(),
-                extension, author(n.getModifiedBy()), n.getModifiedAt(), n.getSizeBytes() == null ? 0 : n.getSizeBytes(),
+                extension, author(modifiedBy), modifiedAt, size,
                 permissions.aclSource(n).getId());
     }
 

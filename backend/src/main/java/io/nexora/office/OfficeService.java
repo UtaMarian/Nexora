@@ -36,11 +36,13 @@ public class OfficeService {
     private final PrincipalRepository principals;
     private final AuditService audit;
     private final EditLockService editLocks;
+    private final DraftPolicy drafts;
 
     public OfficeService(OfficeProperties props, WopiDiscovery discovery, WopiTokenService tokens,
                          DocumentService documents, ContentService content, PermissionService permissions,
                          FileVersionRepository versions, PrincipalRepository principals, AuditService audit,
-                         EditLockService editLocks) {
+                         EditLockService editLocks, DraftPolicy drafts) {
+        this.drafts = drafts;
         this.editLocks = editLocks;
         this.props = props;
         this.discovery = discovery;
@@ -72,7 +74,8 @@ public class OfficeService {
         canWrite = canWrite && discovery.urlFor(ext, "edit").isPresent();
         String token = tokens.issue(user.id(), file.getId(), browserOrigin);
         WopiTokenService.Claims claims = tokens.verify(token, file.getId()).orElseThrow();
-        String wopiSrc = props.wopiHostUrl() + "/wopi/files/" + file.getId();
+        boolean published = permissions.publishedView(user, file).isPresent();
+        String wopiSrc = props.wopiHostUrl() + (published ? "/wopi/published/" : "/wopi/files/") + file.getId();
         String url = base + "WOPISrc=" + URLEncoder.encode(wopiSrc, StandardCharsets.UTF_8) + "&closebutton=1";
         audit.record(user, "OFFICE_OPEN", file, Map.of("mode", canWrite ? "edit" : "view"));
         return new Session(url, token, claims.expiresAt().toEpochMilli(), canWrite, file.getName());
@@ -104,15 +107,28 @@ public class OfficeService {
     @Transactional(readOnly = true)
     public Map<String, Object> fileInfo(CurrentUser user, UUID fileId, String origin) {
         Node file = documents.requireFile(user, fileId);
+        // this address is the live editing session: someone kept from drafts must not be able to join it
+        if (permissions.publishedView(user, file).isPresent()) throw ApiException.notFound("File");
         boolean draft = ownDraft(user, file);
         FileVersion current = versions.findById(file.getCurrentVersionId()).orElseThrow();
-        boolean canWrite = canWrite(user, file);
+        return info(user, file, draft ? file.getWorkingSizeBytes() : current.getSizeBytes(),
+                draft ? "draft-" + file.getWorkingSha256() : current.getSha256(), timestamp(file), canWrite(user, file), origin);
+    }
 
+    /** WOPI CheckFileInfo for the read-only view of the published version. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> publishedInfo(CurrentUser user, UUID fileId, String origin) {
+        Node file = documents.requireFile(user, fileId);
+        FileVersion v = drafts.published(file).orElseThrow(() -> ApiException.notFound("File"));
+        return info(user, file, v.getSizeBytes(), v.getSha256(), v.getCreatedAt().truncatedTo(ChronoUnit.MILLIS).toString(), false, origin);
+    }
+
+    private Map<String, Object> info(CurrentUser user, Node file, long size, String version, String modified, boolean canWrite, String origin) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("BaseFileName", file.getName());
-        info.put("Size", draft ? file.getWorkingSizeBytes() : current.getSizeBytes());
-        info.put("Version", draft ? "draft-" + file.getWorkingSha256() : current.getSha256());
-        info.put("LastModifiedTime", timestamp(file));
+        info.put("Size", size);
+        info.put("Version", version);
+        info.put("LastModifiedTime", modified);
         info.put("OwnerId", file.getCreatedBy().toString());
         info.put("UserId", user.id().toString());
         info.put("UserFriendlyName", user.displayName());

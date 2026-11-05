@@ -45,6 +45,18 @@ endpoints all call it.
   right means **403**. Rights are checked before name conflicts for the same reason.
 - Listings resolve each distinct ACL source once (`PermissionService.levels`).
 
+Drafts are decided in the same place. `DraftPolicy` knows which libraries hide drafts, and `PermissionService` applies
+that to a person:
+
+- **A file never published has no level for someone who cannot edit**, so API, WebDAV, search and every other caller
+  give a 404 with no code of their own.
+- **`publishedViews` names the version to show instead.** Everything that describes or serves a file asks it, so a
+  listing cannot disagree with the download. A wrong length in a WebDAV listing would cut a download short.
+- **Share links do not go through a person**, so `LinkAccessService` asks `DraftPolicy` directly.
+- **The editor is the exception that needs its own address.** Collabora joins everyone with one `WOPISrc` into one live
+  session, so readers get `/wopi/published/{id}`, which has no save, and `/wopi/files/{id}` refuses them at CheckFileInfo.
+  Otherwise a reader could type the live address into the frame and watch an editor's draft.
+
 ## Authentication
 
 - Browser: `POST /api/v1/auth/login` creates a server session. Writes require the `X-XSRF-TOKEN` header
@@ -148,7 +160,8 @@ any change ─ same transaction ─▶ search_queue ──▶ index lane ──�
   The blob collector deletes the text with the blob, so a purged document leaves nothing behind.
 - **Tika runs in its own container** with a memory limit, because it parses untrusted files.
 - **Drafts stay out.** The index sees the current version and the published page only, never a checked-out working copy
-  or a page draft.
+  or a page draft. Where a library hides drafts it sees the latest major version, for everyone, because snippets come
+  from the index and it holds one copy of a document.
 
 Security is enforced twice:
 
@@ -248,8 +261,6 @@ in the service layer only.
   security ("users see only their own items") is not implemented.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.
-- Draft visibility for minor versions (SharePoint's "who can see drafts") is not implemented: readers see
-  the latest version, published or not.
 - New files in "require check-out" libraries are not left checked out to the uploader.
 
 ## Modern pages

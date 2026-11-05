@@ -43,7 +43,8 @@ What protects a link:
 
 - The address holds a 256-bit random token, and the server keeps only a hash, so the database cannot give a link away.
   The address is shown once.
-- Visitors only ever get the published version, never a checked-out draft.
+- Visitors only ever get the current version, never a checked-out draft. Where a library
+  [hides drafts](administration.md#who-can-see-drafts), they get the latest published version.
 - Inside a shared folder, anything with its own permissions stays hidden and cannot be opened.
 - A link stops working when it is stopped, expires, or its item is deleted, and every failure looks the same from outside.
 - Every download is in the audit log.

@@ -190,15 +190,19 @@ public class DavServlet extends HttpServlet {
             return;
         }
         boolean ownDraft = n.isCheckedOut() && user.id().equals(n.getCheckedOutBy()) && n.getWorkingStorageKey() != null;
-        long size = ownDraft ? n.getWorkingSizeBytes() : (n.getSizeBytes() == null ? 0 : n.getSizeBytes());
-        String etag = ownDraft ? n.getWorkingSha256() : etagOf(n);
+        // the listing has to describe what GET returns: a wrong length cuts a download short
+        io.nexora.content.FileVersion published = permissions.publishedView(user, n).orElse(null);
+        long size = published != null ? published.getSizeBytes()
+                : ownDraft ? n.getWorkingSizeBytes() : (n.getSizeBytes() == null ? 0 : n.getSizeBytes());
+        String etag = published != null ? published.getId().toString() : ownDraft ? n.getWorkingSha256() : etagOf(n);
+        Instant modified = published != null ? published.getCreatedAt() : n.getModifiedAt();
         boolean writable = permissions.has(user, n, Right.EDIT_ITEMS);
         xml.append("<D:response><D:href>").append(DavXml.esc(href)).append("</D:href><D:propstat><D:prop>")
                 .append("<D:displayname>").append(DavXml.esc(n.getName())).append("</D:displayname>")
                 .append("<D:resourcetype/>")
                 .append("<D:getcontentlength>").append(size).append("</D:getcontentlength>")
-                .append("<D:getcontenttype>").append(DavXml.esc(n.getMimeType())).append("</D:getcontenttype>")
-                .append("<D:getlastmodified>").append(DavXml.rfc1123(n.getModifiedAt())).append("</D:getlastmodified>")
+                .append("<D:getcontenttype>").append(DavXml.esc(published != null ? published.getMimeType() : n.getMimeType())).append("</D:getcontenttype>")
+                .append("<D:getlastmodified>").append(DavXml.rfc1123(modified)).append("</D:getlastmodified>")
                 .append("<D:creationdate>").append(DavXml.iso(n.getCreatedAt())).append("</D:creationdate>")
                 .append("<D:getetag>\"").append(DavXml.esc(etag)).append("\"</D:getetag>")
                 .append("<D:supportedlock><D:lockentry><D:lockscope><D:exclusive/></D:lockscope>")

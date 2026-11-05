@@ -85,7 +85,8 @@ public final class Dtos {
     // ---- library settings & columns ----
 
     public record LibrarySettingsDto(boolean versioningEnabled, boolean minorVersionsEnabled,
-                                     boolean requireCheckout, Integer maxVersions) {}
+                                     boolean requireCheckout, Integer maxVersions,
+                                     io.nexora.content.LibrarySettings.DraftVisibility draftVisibility) {}
 
     public record ColumnDto(UUID id, String internalName, String displayName, ColumnDef.Type type,
                             boolean required, List<String> choices, UUID lookupListId) {
