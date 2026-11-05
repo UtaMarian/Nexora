@@ -15,6 +15,8 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowDownloadRegular,
+  AlertRegular,
+  CommentRegular,
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DeleteRegular,
@@ -29,6 +31,7 @@ import {
   MoreHorizontalRegular,
   OpenRegular,
   PeopleRegular,
+  ShareRegular,
 } from "@fluentui/react-icons";
 import { api, ApiError, contentUrl, routeFor } from "../api/client";
 import type { NodeDto } from "../api/types";
@@ -39,10 +42,13 @@ import { PropertiesDialog } from "../dialogs/PropertiesDialog";
 import { VersionHistoryDialog } from "../dialogs/VersionHistoryDialog";
 import { PermissionsDialog } from "../dialogs/PermissionsDialog";
 import { CheckInDialog } from "../dialogs/CheckInDialog";
+import { ShareDialog } from "../dialogs/ShareDialog";
+import { AlertDialog } from "../dialogs/AlertDialog";
+import { RequestApprovalDialog } from "../workflow/RequestApprovalDialog";
 
 export const TOASTER_ID = "nexora-toaster";
 
-type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | null;
+type DialogKind = "rename" | "properties" | "versions" | "permissions" | "checkin" | "share" | "alert" | "approval" | "review" | null;
 
 /** The "…" menu for a file or folder. */
 export function ItemActions(props: {
@@ -114,12 +120,12 @@ export function ItemActions(props: {
           <MenuList>
             {isFile ? (
               <>
-                {office.canOpen(node.name) && (
+                {office.canOpen(node.name) && !me.anonymous && (
                   <MenuItem icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(node.id))}>
                     {office.canEdit(node.name) && canEdit ? "Open in browser" : "View in browser"}
                   </MenuItem>
                 )}
-                {desktop && (
+                {desktop && !me.anonymous && (
                   <MenuItem icon={<DesktopRegular />} onClick={() => (window.location.href = desktop.href)}>
                     Open in {desktop.app}
                   </MenuItem>
@@ -138,6 +144,14 @@ export function ItemActions(props: {
               <MenuItem icon={<OpenRegular />} onClick={() => navigate(routeFor(node.path))}>
                 Open
               </MenuItem>
+            )}
+            {can(node, "EDIT_ITEMS") && <MenuItem icon={<ShareRegular />} onClick={() => setDialog("share")}>Share</MenuItem>}
+            {!me.anonymous && <MenuItem icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</MenuItem>}
+            {isFile && can(node, "EDIT_ITEMS") && (
+              <>
+                <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => setDialog("approval")}>Request approval</MenuItem>
+                <MenuItem icon={<CommentRegular />} onClick={() => setDialog("review")}>Request a review</MenuItem>
+              </>
             )}
             <MenuItem icon={<InfoRegular />} onClick={() => setDialog("properties")} disabled={!canEdit}>
               Properties
@@ -248,6 +262,10 @@ export function ItemActions(props: {
       )}
       {dialog === "versions" && <VersionHistoryDialog file={node} onClose={() => setDialog(null)} />}
       {dialog === "permissions" && <PermissionsDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "share" && <ShareDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "alert" && <AlertDialog node={node} onClose={() => setDialog(null)} />}
+      {dialog === "approval" && <RequestApprovalDialog node={node} kind="APPROVAL" onClose={() => setDialog(null)} />}
+      {dialog === "review" && <RequestApprovalDialog node={node} kind="REVIEW" onClose={() => setDialog(null)} />}
       {dialog === "checkin" && (
         <CheckInDialog file={node} minorVersions={props.minorVersions} onClose={() => setDialog(null)} />
       )}

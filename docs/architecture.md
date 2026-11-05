@@ -45,6 +45,18 @@ endpoints all call it.
   right means **403**. Rights are checked before name conflicts for the same reason.
 - Listings resolve each distinct ACL source once (`PermissionService.levels`).
 
+Drafts are decided in the same place. `DraftPolicy` knows which libraries hide drafts, and `PermissionService` applies
+that to a person:
+
+- **A file never published has no level for someone who cannot edit**, so API, WebDAV, search and every other caller
+  give a 404 with no code of their own.
+- **`publishedViews` names the version to show instead.** Everything that describes or serves a file asks it, so a
+  listing cannot disagree with the download. A wrong length in a WebDAV listing would cut a download short.
+- **Share links do not go through a person**, so `LinkAccessService` asks `DraftPolicy` directly.
+- **The editor is the exception that needs its own address.** Collabora joins everyone with one `WOPISrc` into one live
+  session, so readers get `/wopi/published/{id}`, which has no save, and `/wopi/files/{id}` refuses them at CheckFileInfo.
+  Otherwise a reader could type the live address into the frame and watch an editor's draft.
+
 ## Authentication
 
 - Browser: `POST /api/v1/auth/login` creates a server session. Writes require the `X-XSRF-TOKEN` header
@@ -127,6 +139,108 @@ and OPTIONS is anonymous so clients can discover DAV support.
   *alias* (the real document stays put and is hidden from that user's listings). The second rename becomes a
   new version of the same document, so history, permissions and links survive.
 
+## Search
+
+```
+any change ─ same transaction ─▶ search_queue ──▶ index lane ──▶ OpenSearch / Lucene
+                                                     │  ▲
+                                                 needs text
+                                                     ▼  │
+                                                 text lane ──▶ Tika ──▶ search_text
+```
+
+- **Change capture.** `AuditService` already sees every write in the writer's transaction, including bulk subtree
+  updates that never touch a JPA entity, so it feeds `SearchQueue`. A rollback leaves no work, and a crash loses none.
+  Writes without an audit event (title edits, page publishing, each purged node) enqueue directly.
+- **Rows mean "make the index match the database now".** They carry no data, so repeats are harmless and order does
+  not matter. The worker coalesces them and retries by leaving them in place.
+- **Two lanes.** Reading can take minutes, so the index lane indexes a document at once without its text, and the text
+  lane queues it again when the text is ready.
+- **Text is stored by blob** in `search_text`. Rebuilding the index never repeats OCR, and identical files are read once.
+  The blob collector deletes the text with the blob, so a purged document leaves nothing behind.
+- **Tika runs in its own container** with a memory limit, because it parses untrusted files.
+- **Drafts stay out.** The index sees the current version and the published page only, never a checked-out working copy
+  or a page draft. Where a library hides drafts it sees the latest major version, for everyone, because snippets come
+  from the index and it holds one copy of a document.
+
+Security is enforced twice:
+
+1. Each document stores `aclSource`, the node whose ACL governs it. At query time the engine filters by the ACL sources
+   the caller is on, which keeps counts and facets honest. A grant or revoke therefore applies to the next query with
+   no reindexing. Only moves and inheritance changes reindex, because they change `aclSource`.
+2. Every hit is then checked against the database through `PermissionService`, so an index that is behind cannot show
+   anything. Result details also come from the database; the index decides what matches, not what is displayed.
+
+Snippets mark matches with private-use characters, and the API returns them as segments, so no HTML ever reaches the
+page. If the engine is down, `SearchService` falls back to the old name match and sets `degraded`.
+
+## Lists, sharing and alerts
+
+See [lists-sharing-alerts.md](lists-sharing-alerts.md) for what these do.
+
+- **Attachments are `FILE` nodes under a `LIST_ITEM`.** They inherit versions, recycle bin, permissions, search and
+  export without any new storage.
+- **Lookup values store `{lookupId, title}`.** `lookupId` is the item's number in its list, not a node id, because
+  numbers survive SharePoint migration and site export while node ids do not. The title is a snapshot for display, kept
+  current when the target item is renamed.
+- **Views live in the list's `settings`**, so they travel with exports. The web app applies them to loaded items.
+- **Sharing with people is an ordinary ACL entry**, so search, WebDAV and everything else already respect it.
+  `share_grant` only remembers who shared what, for *Shared with me*.
+- **Email and alerts follow the same outbox idea as search.** `AuditService` hands changes to `AlertService` in the
+  writer's transaction, and workers do the slow part. Access is checked per recipient at send time.
+- **Link access never reuses the signed-in path.** `LinkAccessService` serves only the current version, and inside a
+  folder it compares ACL sources: a node with its own permissions has a different source from the shared root, so it is
+  unreachable through the link.
+
+## Workflows
+
+See [workflows.md](workflows.md) for what these do. The development plan names a BPMN engine; this first version is a
+small rule engine in the monolith, which covers approvals and simple automation with no extra service.
+
+- **Events follow the search and alert pattern.** `AuditService` hands changes to `WorkflowEvents` in the writer's
+  transaction, and `WorkflowEngine` handles them in the background.
+- **The Workflow account breaks loops.** Events from it are ignored, so no combination of rules can feed itself.
+- **Changes to an approval take a row lock** (`ApprovalRepository.lockedById`), as the first load in the transaction.
+  Simultaneous answers run one at a time, so the last one always sees the others and finishes the approval.
+- **A `STALE` event guards content.** It is written with the change that makes an approval out of date, so `decide`
+  refuses at once, before the worker has cancelled the request.
+- **Definitions name things.** Rules refer to logins, column names, folder paths and list names, not ids, so they survive
+  export. Steps keep names as well as ids, so the record outlives an account.
+
+## Intranet navigation
+
+See [intranet.md](intranet.md) for what these do.
+
+- **A subsite is a `SITE` node with a parent.** It has its own `siteId`, so everything that scopes by site keeps working,
+  and code that means "top-level" asks for `parentId is null`. `Node.groupPrefix()` keeps group logins unique, as
+  `hr.payroll-owners`. Breadcrumbs stop at the node's own site.
+- **Subsites are not part of their parent's content.** A package carries each one as a nested package in `subsites/`,
+  and the parent's own node list leaves them out, so nothing is exported twice.
+- **Hubs are settings, not a table.** `settings.hub` on the hub site holds its name and navigation, and `settings.hubPath`
+  on a joined site holds the hub's path, so packages stay portable. A site restored under a new name drops both.
+- **Trimming happens where news is read.** `HubService.sitesInHub` filters by permission before `PageController` reads
+  any news, so joining a hub cannot reveal a post.
+- **Embeds are checked twice.** `EmbedPolicy` checks the address when a page is saved, and the web part checks again in
+  the browser, so taking a site off the list works on pages already published.
+- **Templates are `SitePage` rows of kind `TEMPLATE`.** They use the page editor's storage and travel in packages, and
+  `PageService` keeps them out of lists and refuses to publish them. Built-in layouts are the `PageTemplate` enum.
+
+## Anonymous access
+
+See [anonymous-access.md](anonymous-access.md) for what this does.
+
+- **Anonymous is an account, not a special case.** Owners give the built-in `nexora-anonymous` account Read, so
+  `PermissionService` decides as it does for anyone, and inheritance and search need no changes. While the farm switch is
+  on, `principalIds` adds it for everyone.
+- **Being allowed in is separate from having rights.** `AnonymousVisitorFilter` accepts only GET and HEAD on a fixed list
+  of addresses. A permission can never widen that list, so new endpoints need a real account unless added to it.
+- **The account stays at Read.** `grant` and `addMember` both refuse anything that would raise it.
+- **The visitor is not saved to a session**, so turning the switch off takes effect on the next request.
+- **Refusals depend on the site alone.** `ContentService.refused` looks at the sites in an address and never at the item,
+  so the answer cannot be used to test whether a file exists. WebDAV keeps its plain 404.
+- **Trimming happens on the server, per reader.** `LinkTrimmer` runs on the way out, and `?edit=true` returns the full
+  design to those who can change it, so an owner's edit cannot drop links they cannot open.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses
@@ -143,13 +257,10 @@ in the service layer only.
 - Ghost files and aliases are held in memory per backend node; with several nodes, WebDAV needs sticky sessions.
 - Lists live at `/sites/<site>/<List>`, not SharePoint's `/sites/<site>/Lists/<List>`; the migration
   redirect service maps old list URLs.
-- List views are not saved per list yet (sorting and filtering happen in the browser), and item-level
+- Item-level
   security ("users see only their own items") is not implemented.
 - WOPI proof keys (`X-WOPI-Proof`) are not validated yet; the `/wopi` endpoints rely on network isolation
   plus signed tokens.
-- Search matches names and titles only, until the OpenSearch module lands.
-- Draft visibility for minor versions (SharePoint's "who can see drafts") is not implemented: readers see
-  the latest version, published or not.
 - New files in "require check-out" libraries are not left checked out to the uploader.
 
 ## Modern pages

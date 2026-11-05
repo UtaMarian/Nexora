@@ -29,12 +29,17 @@ public class BootstrapRunner implements ApplicationRunner {
     private final String adminLogin;
     private final String adminPassword;
     private final boolean demoData;
+    private final io.nexora.workflow.WorkflowIdentity workflow;
+    private final AnonymousAccess anonymous;
 
     public BootstrapRunner(PrincipalRepository principals, GroupMemberRepository members, NodeRepository nodes,
+                           io.nexora.workflow.WorkflowIdentity workflow, AnonymousAccess anonymous,
                            ContentService content, io.nexora.portal.PortalService portal, PasswordEncoder encoder,
                            @Value("${nexora.bootstrap.admin-login:admin}") String adminLogin,
                            @Value("${nexora.bootstrap.admin-password:}") String adminPassword,
                            @Value("${nexora.bootstrap.demo-data:false}") boolean demoData) {
+        this.workflow = workflow;
+        this.anonymous = anonymous;
         this.principals = principals;
         this.members = members;
         this.nodes = nodes;
@@ -49,6 +54,8 @@ public class BootstrapRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        anonymous.visitor();
+        workflow.user(); // made here, not in whichever transaction first needs it, which might roll back
         Principal admin = principals.findByKindAndLogin(Principal.Kind.USER, adminLogin).orElse(null);
         if (admin == null) {
             if (adminPassword == null || adminPassword.isBlank()) {

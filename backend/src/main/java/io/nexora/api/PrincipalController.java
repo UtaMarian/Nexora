@@ -22,7 +22,7 @@ public class PrincipalController {
     /** People picker: users and groups matching {@code q}. */
     @GetMapping("/principals")
     public List<PrincipalRef> search(@RequestParam(defaultValue = "") String q) {
-        return identity.search(q).stream().map(PrincipalRef::of).toList();
+        return identity.search(q).stream().filter(p -> !io.nexora.identity.AnonymousAccess.LOGIN.equals(p.getLogin())).map(PrincipalRef::of).toList();
     }
 
     @GetMapping("/principals/{id}/members")

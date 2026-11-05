@@ -55,6 +55,13 @@ public class SiteController {
         return mapper.many(user, libs);
     }
 
+    /** The files in the site's Templates library, offered when someone creates a new document. */
+    @GetMapping("/{id}/document-templates")
+    public List<NodeDto> documentTemplates(@PathVariable UUID id) {
+        CurrentUser user = CurrentUser.get();
+        return mapper.many(user, content.documentTemplates(user, id));
+    }
+
     @PostMapping("/{id}/libraries")
     @ResponseStatus(HttpStatus.CREATED)
     public NodeDto createLibrary(@PathVariable UUID id, @Valid @RequestBody CreateLibraryRequest body) {

@@ -31,10 +31,13 @@ public class AuthController {
     private final IdentityService identity;
     private final AuditService audit;
     private final io.nexora.identity.sso.IdentityProperties idp;
+    private final io.nexora.search.SearchSwitch search;
 
     public AuthController(AuthenticationManager authManager, SecurityContextRepository contextRepository,
-                          IdentityService identity, AuditService audit, io.nexora.identity.sso.IdentityProperties idp) {
+                          IdentityService identity, AuditService audit, io.nexora.identity.sso.IdentityProperties idp,
+                          io.nexora.search.SearchSwitch search) {
         this.idp = idp;
+        this.search = search;
         this.authManager = authManager;
         this.contextRepository = contextRepository;
         this.identity = identity;
@@ -69,7 +72,7 @@ public class AuthController {
     public Me me() {
         CurrentUser user = CurrentUser.get();
         Principal p = identity.get(user.id());
-        return new Me(p.getId(), p.getLogin(), p.getDisplayName(), p.getEmail(), p.isAdmin());
+        return new Me(p.getId(), user.anonymous() ? null : p.getLogin(), p.getDisplayName(), p.getEmail(), p.isAdmin(), search.enabled(), user.anonymous());
     }
 
     public record SsoOption(String id, String label, String url) {}

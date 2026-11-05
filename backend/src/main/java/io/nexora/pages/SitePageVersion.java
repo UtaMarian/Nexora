@@ -40,6 +40,21 @@ public class SitePageVersion {
         return v;
     }
 
+    public static SitePageVersion restored(UUID pageId, int version, String title, String description, UUID banner,
+                                           Map<String, Object> canvas, UUID publishedBy, Instant publishedAt) {
+        SitePageVersion v = new SitePageVersion();
+        v.id = UUID.randomUUID();
+        v.pageId = pageId;
+        v.version = version;
+        v.title = title;
+        v.description = description;
+        v.bannerImageId = banner;
+        v.canvas = canvas;
+        v.publishedBy = publishedBy;
+        v.publishedAt = publishedAt;
+        return v;
+    }
+
     public UUID getId() { return id; }
     public UUID getPageId() { return pageId; }
     public int getVersion() { return version; }

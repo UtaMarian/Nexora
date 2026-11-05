@@ -13,7 +13,7 @@ import java.util.UUID;
 @Table(name = "column_def")
 public class ColumnDef {
 
-    public enum Type { TEXT, NOTE, NUMBER, DATE, BOOLEAN, CHOICE, URL, PERSON }
+    public enum Type { TEXT, NOTE, NUMBER, DATE, BOOLEAN, CHOICE, URL, PERSON, LOOKUP }
 
     @Id
     private UUID id;
@@ -26,6 +26,8 @@ public class ColumnDef {
     @JdbcTypeCode(SqlTypes.JSON)
     private List<String> choices = new ArrayList<>();
     private int position;
+    /** The list a lookup column picks from. */
+    private UUID lookupListId;
 
     protected ColumnDef() {}
 
@@ -41,6 +43,8 @@ public class ColumnDef {
         this.position = position;
     }
 
+    public UUID getLookupListId() { return lookupListId; }
+    public void setLookupListId(UUID lookupListId) { this.lookupListId = lookupListId; }
     public UUID getId() { return id; }
     public UUID getLibraryId() { return libraryId; }
     public String getInternalName() { return internalName; }

@@ -1,7 +1,8 @@
 import { Checkbox, Dropdown, Input, Option, Persona, Textarea } from "@fluentui/react-components";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { routeFor } from "../api/client";
-import type { ColumnDto, ColumnType, PersonValue, PrincipalRef } from "../api/types";
+import { api, routeFor } from "../api/client";
+import type { ColumnDto, ColumnType, NodeDto, PersonValue, PrincipalRef } from "../api/types";
 import { PeoplePicker } from "../dialogs/PeoplePicker";
 
 export const COLUMN_TYPES: { value: ColumnType; label: string }[] = [
@@ -13,9 +14,14 @@ export const COLUMN_TYPES: { value: ColumnType; label: string }[] = [
   { value: "CHOICE", label: "Choice" },
   { value: "URL", label: "Hyperlink" },
   { value: "PERSON", label: "Person or group" },
+  { value: "LOOKUP", label: "Lookup (from another list)" },
 ];
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
+interface LookupValue { lookupId: number; title: string }
+
+const isLookup = (v: unknown): v is LookupValue => !!v && typeof v === "object" && "lookupId" in (v as object);
 
 const isPerson = (v: unknown): v is PersonValue => !!v && typeof v === "object" && "displayName" in (v as object);
 
@@ -24,6 +30,7 @@ export function valueText(v: unknown): string {
   if (v == null) return "";
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (isPerson(v)) return v.displayName;
+  if (isLookup(v)) return v.title;
   if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) {
     const d = new Date(v.length === 10 ? v + "T00:00:00" : v);
     return isNaN(d.getTime()) ? v : dateFmt.format(d);
@@ -47,9 +54,33 @@ export function ColumnValue({ column, value }: { column?: ColumnDto; value: unkn
   return <>{valueText(value)}</>;
 }
 
+function LookupInput({ column, value, onChange }: { column: ColumnDto; value: unknown; onChange: (v: unknown) => void }) {
+  const items = useQuery({
+    queryKey: ["children", column.lookupListId], enabled: !!column.lookupListId,
+    queryFn: () => api<NodeDto[]>(`/api/v1/nodes/${column.lookupListId}/children`),
+  });
+  const current = isLookup(value) ? value : null;
+  return (
+    <Dropdown
+      value={current?.title ?? ""}
+      selectedOptions={current ? [String(current.lookupId)] : []}
+      placeholder="Choose…"
+      onOptionSelect={(_, d) => {
+        const item = items.data?.find((n) => n.name === d.optionValue);
+        onChange(item ? { lookupId: Number(item.name), title: item.title ?? "" } : null);
+      }}
+    >
+      {!column.required && <Option value="" text="(None)">(None)</Option>}
+      {(items.data ?? []).map((n) => <Option key={n.id} value={n.name} text={n.title ?? n.name}>{n.title ?? n.name}</Option>)}
+    </Dropdown>
+  );
+}
+
 export function ColumnInput({ column, value, onChange }: { column: ColumnDto; value: unknown; onChange: (v: unknown) => void }) {
   const str = value == null || typeof value === "object" ? "" : String(value);
   switch (column.type) {
+    case "LOOKUP":
+      return <LookupInput column={column} value={value} onChange={onChange} />;
     case "NOTE":
       return <Textarea value={str} onChange={(_, d) => onChange(d.value)} resize="vertical" />;
     case "NUMBER":

@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface ColumnDefRepository extends JpaRepository<ColumnDef, UUID> {
     List<ColumnDef> findByLibraryIdOrderByPosition(UUID libraryId);
+
+    List<ColumnDef> findByLookupListId(UUID lookupListId);
 }

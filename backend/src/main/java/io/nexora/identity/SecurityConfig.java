@@ -42,7 +42,7 @@ public class SecurityConfig {
     SecurityFilterChain api(HttpSecurity http,
                             org.springframework.beans.factory.ObjectProvider<io.nexora.identity.sso.SsoConfig.SsoSecurity> sso,
                             io.nexora.identity.sso.IdentityProperties identity,
-                            AuthProviders authProviders) throws Exception {
+                            AuthProviders authProviders, AnonymousAccess anonymous) throws Exception {
         // WOPI calls come server-to-server from the Office editor and carry a signed access_token, not a cookie.
         RequestMatcher csrfRequired = request ->
                 !SAFE_METHODS.contains(request.getMethod())
@@ -52,10 +52,13 @@ public class SecurityConfig {
         // Add (not replace) our providers, so the OIDC login and bearer-token providers Spring registers still apply.
         authProviders.providers().forEach(http::authenticationProvider);
         http
+            .addFilterAfter(new AnonymousVisitorFilter(anonymous),
+                    org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/login", "/api/v1/auth/csrf", "/api/v1/auth/providers",
                         "/api/v1/auth/ofba/**").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/links/**").permitAll() // checked by LinkAccessService
                 .requestMatchers("/wopi/**").permitAll() // authenticated by WOPI access token in WopiController
                 .requestMatchers("/actuator/health/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

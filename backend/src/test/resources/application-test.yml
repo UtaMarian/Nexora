@@ -13,6 +13,19 @@ nexora:
     discovery-url: http://127.0.0.1:9/hosting/discovery   # nothing listens here: editor "unavailable"
     wopi-host-url: http://nexora.test
     token-secret: test-secret
+  mail:
+    enabled: true           # mail stays in the outbox: nothing listens here and the worker is off
+    host: 127.0.0.1
+    port: 9
+    worker-enabled: false
+    public-url: https://nexora.test
+  workflow:
+    worker-enabled: false   # WorkflowTest drains the queue itself
+  search:
+    engine: lucene
+    worker-enabled: false   # SearchTest drains the queue itself
+    lucene:
+      path: ""              # in memory
   bootstrap:
     admin-login: admin
     admin-password: admin-test-pw

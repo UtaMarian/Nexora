@@ -1,8 +1,11 @@
 package io.nexora.acl;
 
 import io.nexora.common.ApiException;
+import io.nexora.content.DraftPolicy;
+import io.nexora.content.FileVersion;
 import io.nexora.content.Node;
 import io.nexora.content.NodeRepository;
+import io.nexora.identity.AnonymousAccess;
 import io.nexora.identity.CurrentUser;
 import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
@@ -24,8 +27,13 @@ public class PermissionService {
     private final NodeRepository nodes;
     private final AclEntryRepository acl;
     private final GroupMemberRepository members;
+    private final AnonymousAccess anonymous;
+    private final DraftPolicy drafts;
 
-    public PermissionService(NodeRepository nodes, AclEntryRepository acl, GroupMemberRepository members) {
+    public PermissionService(NodeRepository nodes, AclEntryRepository acl, GroupMemberRepository members, AnonymousAccess anonymous,
+                             DraftPolicy drafts) {
+        this.drafts = drafts;
+        this.anonymous = anonymous;
         this.nodes = nodes;
         this.acl = acl;
         this.members = members;
@@ -35,6 +43,7 @@ public class PermissionService {
     public Set<UUID> principalIds(CurrentUser user) {
         Set<UUID> result = new HashSet<>();
         result.add(user.id());
+        if (anonymous.enabled()) result.add(anonymous.id());   // what anyone can read, everyone can read
         Set<UUID> frontier = Set.of(user.id());
         while (!frontier.isEmpty()) {
             Set<UUID> next = new HashSet<>();
@@ -61,7 +70,10 @@ public class PermissionService {
     /** Highest level the user holds on the node, or {@code null} for no access. */
     public PermissionLevel effectiveLevel(CurrentUser user, Node node) {
         if (user.admin()) return PermissionLevel.FULL_CONTROL;
-        return levelOnSource(aclSource(node), principalIds(user));
+        PermissionLevel level = levelOnSource(aclSource(node), principalIds(user));
+        if (level == null || level.grants(Right.EDIT_ITEMS) || node.getKind() != Node.Kind.FILE) return level;
+        // a file that was never published does not exist for someone who may not see drafts
+        return drafts.restricted(node) && drafts.published(node).isEmpty() ? null : level;
     }
 
     public boolean has(CurrentUser user, Node node, Right right) {
@@ -99,7 +111,42 @@ public class PermissionService {
             bySource.computeIfAbsent(source.getId(), k -> Optional.ofNullable(levelOnSource(source, principals)))
                     .ifPresent(level -> result.put(n.getId(), level));
         }
+        Set<UUID> readOnly = drafts.restricted(candidates.stream().filter(n -> readOnly(result.get(n.getId()))).toList());
+        Set<UUID> published = drafts.published(readOnly).keySet();
+        readOnly.stream().filter(id -> !published.contains(id)).forEach(result::remove);
         return result;
+    }
+
+    private static boolean readOnly(PermissionLevel level) {
+        return level != null && !level.grants(Right.EDIT_ITEMS);
+    }
+
+    /**
+     * The version to show instead of the latest one, for files among {@code candidates} whose library hides drafts
+     * from this user. Files the user reads as they are, or cannot read at all, are absent.
+     */
+    public Map<UUID, FileVersion> publishedViews(CurrentUser user, Collection<Node> candidates) {
+        if (user.admin()) return Map.of();
+        Set<UUID> restricted = drafts.restricted(candidates);
+        if (restricted.isEmpty()) return Map.of();
+        List<Node> files = candidates.stream().filter(n -> restricted.contains(n.getId())).toList();
+        Map<UUID, PermissionLevel> held = levels(user, files);
+        return drafts.published(files.stream().map(Node::getId).filter(id -> readOnly(held.get(id))).toList());
+    }
+
+    public Optional<FileVersion> publishedView(CurrentUser user, Node file) {
+        return Optional.ofNullable(publishedViews(user, List.of(file)).get(file.getId()));
+    }
+
+    /** Whether the user can see the node as it is now, draft included. Approving or hearing about a change needs that. */
+    public boolean seesLatest(CurrentUser user, Node node) {
+        if (effectiveLevel(user, node) == null) return false;
+        return publishedView(user, node).map(v -> v.getId().equals(node.getCurrentVersionId())).orElse(true);
+    }
+
+    /** The ACL sources the user is on: what search filters by, so a grant or revoke applies to the next query. */
+    public Set<UUID> readableSources(CurrentUser user) {
+        return acl.findNodeIdsByPrincipals(principalIds(user));
     }
 
     /** Security-trims a list of nodes, keeping order. */
@@ -145,6 +192,9 @@ public class PermissionService {
 
     @Transactional
     public void grant(Node node, UUID principalId, PermissionLevel level) {
+        if (principalId.equals(anonymous.id()) && level != PermissionLevel.READ) {
+            throw ApiException.badRequest("anonymous_read_only", "Anonymous visitors can only read");
+        }
         if (node.isInheritsPermissions()) {
             throw ApiException.conflict("inherits_permissions",
                     "This item inherits permissions. Stop inheriting before granting access directly.");

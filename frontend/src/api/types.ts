@@ -25,6 +25,9 @@ export interface Me {
   displayName: string;
   email?: string;
   admin: boolean;
+  searchEnabled: boolean;
+  /** reading without signing in */
+  anonymous: boolean;
 }
 
 export interface NodeDto {
@@ -52,6 +55,8 @@ export interface NodeDto {
   inheritsPermissions: boolean;
   myLevel?: PermissionLevel;
   myRights: Right[];
+  /** The latest approval or review, as KIND:STATUS. */
+  approvalStatus?: string;
 }
 
 export interface Crumb {
@@ -84,9 +89,10 @@ export interface LibrarySettings {
   minorVersionsEnabled: boolean;
   requireCheckout: boolean;
   maxVersions?: number | null;
+  draftVisibility?: "READERS" | "EDITORS";
 }
 
-export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON";
+export type ColumnType = "TEXT" | "NOTE" | "NUMBER" | "DATE" | "BOOLEAN" | "CHOICE" | "URL" | "PERSON" | "LOOKUP";
 
 export interface ColumnDto {
   id: string;
@@ -95,11 +101,21 @@ export interface ColumnDto {
   type: ColumnType;
   required: boolean;
   choices: string[];
+  lookupListId?: string;
 }
 
 export interface AclEntry {
   principal: PrincipalRef;
   level: PermissionLevel;
+}
+
+export interface AnonymousStatus {
+  /** the farm allows it */
+  available: boolean;
+  enabled: boolean;
+  /** it comes from sourcePath, and is changed there */
+  inherited: boolean;
+  sourcePath: string;
 }
 
 export interface Permissions {
@@ -138,7 +154,31 @@ export interface Page<T> {
 
 export interface Link {
   label: string;
-  url: string;
+  /** optional when the link opens a mega menu */
+  url?: string;
+  description?: string;
+  groups?: LinkGroup[];
+}
+
+/** One column of a mega menu. */
+export interface LinkGroup {
+  heading: string;
+  links: Link[];
+}
+
+/** Someone who cannot open the hub gets only its theme. */
+export interface Hub {
+  id?: string;
+  title?: string;
+  path?: string;
+  navigation: Link[];
+  theme?: string;
+}
+
+export interface SiteRef {
+  id: string;
+  title: string;
+  path: string;
 }
 
 export interface SiteDesign {
@@ -162,14 +202,110 @@ export interface DesignResponse {
   template?: string;
   /** a published modern page shown as the site's home page */
   homePageId?: string;
+  parent?: SiteRef;
+  /** the hub this site belongs to: itself, the one it joined, or its parent's */
+  hub?: Hub;
+  isHub: boolean;
+  joinedHubId?: string;
 }
 
 // ---- modern pages (backend: io.nexora.pages) ----
 
 export type PageKind = "PAGE" | "NEWS";
+
+export type ListViewType = "table" | "calendar" | "gallery";
+
+export interface ListViewFilter {
+  column: string;
+  operator: "eq" | "ne" | "contains" | "gt" | "lt" | "empty" | "notEmpty";
+  value?: string;
+}
+
+export interface ListView {
+  id: string;
+  name: string;
+  type: ListViewType;
+  columns: string[];
+  sortBy?: string | null;
+  sortDescending: boolean;
+  filters: ListViewFilter[];
+  dateColumn?: string | null;
+  endColumn?: string | null;
+  isDefault: boolean;
+}
+
+export interface ItemVersion {
+  version: number;
+  current: boolean;
+  title: string;
+  values?: Record<string, unknown>;
+  createdBy?: PrincipalRef;
+  createdAt: string;
+}
+
+export type AlertFrequency = "IMMEDIATE" | "DAILY" | "WEEKLY";
+
+export interface AlertDto {
+  id: string;
+  nodeId: string;
+  title: string;
+  path: string;
+  kind: Kind;
+  frequency: AlertFrequency;
+  createdAt: string;
+}
+
+export interface ShareLinkDto {
+  id: string;
+  scope: "ANYONE" | "ORGANIZATION";
+  expiresAt: string;
+  hasPassword: boolean;
+  useCount: number;
+  lastUsedAt?: string;
+  createdBy: PrincipalRef;
+  createdAt: string;
+  path?: string;
+}
+
+export interface SharesDto {
+  links: ShareLinkDto[];
+  people: { id: string; principal: PrincipalRef; level: string; sharedBy: PrincipalRef; sharedAt: string }[];
+  anyoneLinksAllowed: boolean;
+  maxLinkDays: number;
+  emailEnabled: boolean;
+}
+
+export interface SearchHit {
+  id: string;
+  kind: Kind | PageKind;
+  title: string;
+  name: string;
+  path: string;
+  siteTitle?: string;
+  /** Pieces of text; the ones with match set are the words that were found. Never contains HTML. */
+  snippet: { text: string; match: boolean }[];
+  modifiedAt: string;
+  modifiedBy?: string;
+  sizeBytes?: number;
+  mimeType?: string;
+}
+
+export interface SearchFacetValue {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface SearchResponse {
+  total: number;
+  hits: SearchHit[];
+  facets: Record<string, SearchFacetValue[]>;
+  /** The search engine is down: these are name matches only. */
+  degraded: boolean;
+}
 export type SectionLayout = "one" | "two" | "three" | "oneThirdLeft" | "oneThirdRight";
 export type SectionBackground = "none" | "soft" | "strong";
-export type WebPartType = "text" | "image" | "documents" | "list" | "news";
+export type WebPartType = "text" | "image" | "documents" | "list" | "news" | "quicklinks" | "events" | "people" | "embed";
 
 export interface WebPart {
   id: string;
@@ -194,8 +330,17 @@ export interface PageContent {
   canvas: Canvas;
 }
 
+export interface PageTemplateInfo {
+  /** a built-in layout's name, or a saved template's page id */
+  id: string;
+  title: string;
+  description?: string;
+  custom: boolean;
+}
+
 export interface PageSummary {
   id: string;
+  siteTitle?: string;
   siteId: string;
   name: string;
   kind: PageKind;

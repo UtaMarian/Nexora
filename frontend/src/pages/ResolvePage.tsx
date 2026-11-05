@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import type { NodeDetail } from "../api/types";
 import { Loading, NotFound } from "../components/States";
+import { OldLink } from "../components/OldLink";
 import { SiteChrome } from "../components/SiteChrome";
 import { SiteView } from "./SiteView";
 import { LibraryView } from "./LibraryView";
@@ -13,7 +14,7 @@ import { PageScreen } from "../pagekit/PageView";
 import { SitePagesView } from "../pagekit/SitePagesView";
 
 /** /sites/<site>/SitePages[/<page>.aspx]: modern pages live beside the content tree. */
-const PAGES = /^(\/sites\/[^/]+)\/sitepages(\/.*)?$/i;
+const PAGES = /^(\/sites\/.+?)\/sitepages(\/.*)?$/i;
 
 /**
  * Browser URLs mirror SharePoint server-relative URLs (/sites/hr/Shared Documents/Policies),
@@ -38,7 +39,7 @@ function PageRoute({ path }: { path: string }) {
     retry: false,
   });
   if (page.isPending) return <Loading />;
-  if (page.error || !page.data) return <NotFound error={page.error} />;
+  if (page.error || !page.data) return <OldLink error={page.error} />;
   return (
     <SiteChrome siteId={page.data.page.siteId}>
       <PageScreen detail={page.data} />
@@ -67,7 +68,7 @@ function NodeRoute({ path }: { path: string }) {
   });
 
   if (detail.isPending) return <Loading />;
-  if (detail.error || !detail.data) return <NotFound error={detail.error} />;
+  if (detail.error || !detail.data) return <OldLink error={detail.error} />;
 
   const { node, breadcrumbs } = detail.data;
   return (

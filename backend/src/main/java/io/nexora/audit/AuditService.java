@@ -1,7 +1,10 @@
 package io.nexora.audit;
 
+import io.nexora.alerts.AlertService;
 import io.nexora.content.Node;
 import io.nexora.identity.CurrentUser;
+import io.nexora.search.SearchQueue;
+import io.nexora.workflow.WorkflowEvents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,9 +21,15 @@ public class AuditService {
     private static final Logger SIEM = LoggerFactory.getLogger("nexora.audit");
 
     private final AuditRepository repo;
+    private final SearchQueue search;
+    private final AlertService alerts;
+    private final WorkflowEvents workflow;
 
-    public AuditService(AuditRepository repo) {
+    public AuditService(AuditRepository repo, SearchQueue search, AlertService alerts, WorkflowEvents workflow) {
+        this.workflow = workflow;
         this.repo = repo;
+        this.search = search;
+        this.alerts = alerts;
     }
 
     public void record(CurrentUser actor, String action, Node node, Map<String, Object> details) {
@@ -33,6 +42,9 @@ public class AuditService {
                 node == null ? null : node.getPath(),
                 details == null || details.isEmpty() ? null : details);
         repo.save(e);
+        search.audited(action, node);
+        alerts.audited(action, actor, node);
+        workflow.audited(action, actor, node);
         SIEM.info("action={} actor={} node={} path=\"{}\" details={}",
                 action, e.getActorLogin(), e.getNodeId(), e.getNodePath(), e.getDetails());
     }

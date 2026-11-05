@@ -23,11 +23,12 @@ public final class Dtos {
 
     public record PrincipalRef(UUID id, Principal.Kind kind, String login, String displayName) {
         public static PrincipalRef of(Principal p) {
-            return p == null ? null : new PrincipalRef(p.getId(), p.getKind(), p.getLogin(), p.getDisplayName());
+            if (p == null) return null;
+            return new PrincipalRef(p.getId(), p.getKind(), io.nexora.identity.CurrentUser.anonymousRequest() ? null : p.getLogin(), p.getDisplayName());
         }
     }
 
-    public record Me(UUID id, String login, String displayName, String email, boolean admin) {}
+    public record Me(UUID id, String login, String displayName, String email, boolean admin, boolean searchEnabled, boolean anonymous) {}
 
     public record LoginRequest(@NotBlank String login, @NotBlank String password) {}
 
@@ -48,7 +49,7 @@ public final class Dtos {
             PrincipalRef lockedBy, Instant lockExpiresAt,
             PrincipalRef createdBy, Instant createdAt, PrincipalRef modifiedBy, Instant modifiedAt,
             Map<String, Object> metadata, boolean inheritsPermissions,
-            PermissionLevel myLevel, Set<Right> myRights) {}
+            PermissionLevel myLevel, Set<Right> myRights, String approvalStatus) {}
 
     public record NodeDetail(NodeDto node, List<Crumb> breadcrumbs) {}
 
@@ -84,18 +85,21 @@ public final class Dtos {
     // ---- library settings & columns ----
 
     public record LibrarySettingsDto(boolean versioningEnabled, boolean minorVersionsEnabled,
-                                     boolean requireCheckout, Integer maxVersions) {}
+                                     boolean requireCheckout, Integer maxVersions,
+                                     io.nexora.content.LibrarySettings.DraftVisibility draftVisibility) {}
 
     public record ColumnDto(UUID id, String internalName, String displayName, ColumnDef.Type type,
-                            boolean required, List<String> choices) {
+                            boolean required, List<String> choices, UUID lookupListId) {
         public static ColumnDto of(ColumnDef c) {
             return new ColumnDto(c.getId(), c.getInternalName(), c.getDisplayName(), c.getType(), c.isRequired(),
-                    c.getChoices());
+                    c.getChoices(), c.getLookupListId());
         }
     }
 
     public record CreateColumnRequest(@NotBlank String displayName, @NotNull ColumnDef.Type type, boolean required,
-                                      List<String> choices) {}
+                                      List<String> choices, UUID lookupListId) {}
+
+    public record NewDocumentRequest(io.nexora.content.DocumentService.NewDocument type, String name, UUID templateId) {}
 
     // ---- permissions ----
 

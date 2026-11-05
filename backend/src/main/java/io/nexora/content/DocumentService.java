@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
@@ -40,10 +41,14 @@ public class DocumentService {
     private final BlobGarbageCollector gc;
     private final AuditService audit;
     private final EditLockService editLocks;
+    private final QuotaService quotas;
+    private final DraftPolicy drafts;
 
     public DocumentService(NodeRepository nodes, FileVersionRepository versions, ContentService content,
                            PermissionService permissions, BlobStore store, BlobGarbageCollector gc, AuditService audit,
-                           EditLockService editLocks) {
+                           EditLockService editLocks, QuotaService quotas, DraftPolicy drafts) {
+        this.quotas = quotas;
+        this.drafts = drafts;
         this.editLocks = editLocks;
         this.nodes = nodes;
         this.versions = versions;
@@ -61,8 +66,8 @@ public class DocumentService {
     public Node upload(CurrentUser user, UUID parentId, String fileName, String declaredMime, Path data,
                        boolean overwrite, String comment) {
         Node parent = content.get(user, parentId);
-        if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER) {
-            throw ApiException.badRequest("invalid_parent", "Files can only be uploaded to a library or folder");
+        if (parent.getKind() != Node.Kind.LIBRARY && parent.getKind() != Node.Kind.FOLDER && parent.getKind() != Node.Kind.LIST_ITEM) {
+            throw ApiException.badRequest("invalid_parent", "Files can only be uploaded to a library, a folder or a list item");
         }
         // Check rights before looking at names, so people without write access learn nothing about siblings.
         permissions.require(user, parent, Right.ADD_ITEMS);
@@ -76,12 +81,46 @@ public class DocumentService {
             return saveContent(user, file, declaredMime, data, comment);
         }
 
+        quotas.admit(parent, size(data));
         StoredBlob blob = put(data);
         Node file = Node.create(Node.Kind.FILE, parent, name, user.id());
         nodes.saveAndFlush(file);
         addVersion(user, file, blob, MimeTypes.resolve(name, declaredMime), comment, false);
         audit.record(user, "FILE_UPLOAD", file, Map.of("size", blob.sizeBytes(), "version", currentLabel(file)));
         return file;
+    }
+
+    /** The blank documents people can create. */
+    public enum NewDocument {
+        WORD("docx"), EXCEL("xlsx"), POWERPOINT("pptx");
+
+        final String extension;
+
+        NewDocument(String extension) {
+            this.extension = extension;
+        }
+    }
+
+    /** Creates a blank document, or a copy of a template the user can read. It then behaves like any upload. */
+    public Node createDocument(CurrentUser user, UUID parentId, NewDocument type, String rawName, UUID templateId) {
+        if (rawName == null || rawName.isBlank()) throw ApiException.badRequest("invalid_name", "A document needs a name");
+        if (type == null && templateId == null) throw ApiException.badRequest("invalid_type", "Choose a document type or a template");
+        Node template = templateId == null ? null : requireFile(user, templateId);
+        String extension = template != null ? MimeTypes.extension(template.getName()) : type.extension;
+        String name = rawName.strip();
+        if (!name.toLowerCase(java.util.Locale.ROOT).endsWith("." + extension)) name += "." + extension;
+        Path tmp = null;
+        try (InputStream in = template != null ? store.open(current(template).getStorageKey())
+                : new org.springframework.core.io.ClassPathResource("blank/blank." + extension).getInputStream()) {
+            tmp = Files.createTempFile("nexora-new", ".document");
+            Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            return upload(user, parentId, name, null, tmp, false,
+                    template != null ? "Created from template " + template.getName() : "New document");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not create " + name, e);
+        } finally {
+            if (tmp != null) tmp.toFile().delete();
+        }
     }
 
     /** Saves new content for an existing file (new version, or the working copy if checked out). */
@@ -99,6 +138,8 @@ public class DocumentService {
             if (!file.getCheckedOutBy().equals(user.id())) {
                 throw ApiException.locked("'" + file.getName() + "' is checked out by someone else");
             }
+            long replacing = file.getWorkingSizeBytes() == null ? 0 : file.getWorkingSizeBytes();
+            quotas.admit(file, size(data) - replacing);
             StoredBlob blob = put(data);
             String previous = file.getWorkingStorageKey();
             file.setWorkingStorageKey(blob.key());
@@ -114,6 +155,7 @@ public class DocumentService {
             throw new ApiException(HttpStatus.CONFLICT, "checkout_required",
                     "This library requires files to be checked out before they are changed");
         }
+        quotas.admit(file, size(data));
         StoredBlob blob = put(data);
         addVersion(user, file, blob, mime, comment, false);
         audit.record(user, "FILE_UPDATE", file, Map.of("size", blob.sizeBytes(), "version", currentLabel(file)));
@@ -207,7 +249,9 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public List<FileVersion> history(CurrentUser user, UUID fileId) {
         Node file = requireFile(user, fileId);
-        return versions.findHistory(file.getId());
+        List<FileVersion> history = versions.findHistory(file.getId());
+        if (permissions.publishedView(user, file).isEmpty()) return history;
+        return history.stream().filter(FileVersion::isMajor).toList();
     }
 
     public Node restoreVersion(CurrentUser user, UUID fileId, UUID versionId, String comment) {
@@ -284,9 +328,13 @@ public class DocumentService {
 
         Integer max = settings.maxVersions();
         if (settings.versioningEnabled() && max != null && history.size() + 1 > max) {
-            List<FileVersion> excess = history.subList(max - 1, history.size()); // history is newest-first
+            List<FileVersion> excess = new ArrayList<>(history.subList(max - 1, history.size())); // history is newest-first
+            if (settings.hidesDrafts() && !v.isMajor()) {
+                // trimming the only published version would take the file away from everyone who cannot see drafts
+                history.stream().filter(FileVersion::isMajor).findFirst().ifPresent(excess::remove);
+            }
             excess.forEach(old -> released.add(old.getStorageKey()));
-            versions.deleteAll(new ArrayList<>(excess));
+            versions.deleteAll(excess);
         }
         versions.flush();
         released.remove(blob.key());
@@ -304,19 +352,29 @@ public class DocumentService {
      */
     public Download open(CurrentUser user, UUID fileId, UUID versionId) {
         Node file = requireFile(user, fileId);
+        Optional<FileVersion> published = permissions.publishedView(user, file);
         Download d;
         if (versionId != null) {
             FileVersion v = versionOf(file, versionId);
+            if (published.isPresent() && !v.isMajor()) throw ApiException.notFound("Version");
             d = download(v.getFileName(), v.getMimeType(), v.getSizeBytes(), v.getSha256(), v.label(), v.getStorageKey());
         } else if (file.isCheckedOut() && file.getCheckedOutBy().equals(user.id()) && file.getWorkingStorageKey() != null) {
             d = download(file.getName(), file.getWorkingMimeType(), file.getWorkingSizeBytes(), file.getWorkingSha256(),
                     "draft", file.getWorkingStorageKey());
         } else {
-            FileVersion v = current(file);
+            FileVersion v = published.orElseGet(() -> current(file));
             d = download(file.getName(), v.getMimeType(), v.getSizeBytes(), v.getSha256(), v.label(), v.getStorageKey());
         }
         audit.record(user, "FILE_DOWNLOAD", file, Map.of("version", d.versionLabel()));
         return d;
+    }
+
+    /** Opens the latest major version, whatever the caller's rights: the read-only editor view uses this. */
+    public Download openPublished(CurrentUser user, UUID fileId) {
+        Node file = requireFile(user, fileId);
+        FileVersion v = drafts.published(file).orElseThrow(() -> ApiException.notFound("Version"));
+        audit.record(user, "FILE_DOWNLOAD", file, Map.of("version", v.label()));
+        return download(file.getName(), v.getMimeType(), v.getSizeBytes(), v.getSha256(), v.label(), v.getStorageKey());
     }
 
     private Download download(String name, String mime, long size, String sha, String label, String key) {
@@ -354,6 +412,14 @@ public class DocumentService {
 
     private LibrarySettings settingsFor(Node file) {
         return LibrarySettings.of(content.libraryOf(file));
+    }
+
+    private static long size(Path data) {
+        try {
+            return Files.size(data);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read upload", e);
+        }
     }
 
     private StoredBlob put(Path data) {

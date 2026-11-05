@@ -37,7 +37,7 @@ public final class MimeTypes {
         return guessed != null ? guessed : "application/octet-stream";
     }
 
-    static String extension(String fileName) {
+    public static String extension(String fileName) {
         int dot = fileName.lastIndexOf('.');
         return dot < 0 ? "" : fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
     }

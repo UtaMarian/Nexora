@@ -16,4 +16,11 @@ public interface FileVersionRepository extends JpaRepository<FileVersion, UUID> 
     List<FileVersion> findByNodeIdIn(Collection<UUID> nodeIds);
 
     long countByStorageKey(String storageKey);
+
+    /** Each file's latest major version. Files that were never published are absent. */
+    @Query("""
+            select v from FileVersion v where v.nodeId in :nodeIds and v.minor = 0
+              and v.major = (select max(m.major) from FileVersion m where m.nodeId = v.nodeId and m.minor = 0)
+            """)
+    List<FileVersion> findLatestMajors(@Param("nodeIds") Collection<java.util.UUID> nodeIds);
 }

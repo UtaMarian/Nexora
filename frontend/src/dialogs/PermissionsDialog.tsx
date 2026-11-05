@@ -15,6 +15,7 @@ import {
   MessageBarBody,
   Option,
   Persona,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -26,12 +27,46 @@ import {
 } from "@fluentui/react-components";
 import { DismissRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
-import type { NodeDto, PermissionLevel, Permissions, PrincipalRef } from "../api/types";
+import type { AnonymousStatus, NodeDto, PermissionLevel, Permissions, PrincipalRef } from "../api/types";
 import { ErrorBar, Loading } from "../components/States";
 import { levelLabel } from "../components/format";
 import { PeoplePicker } from "./PeoplePicker";
 
 const LEVELS: PermissionLevel[] = ["READ", "CONTRIBUTE", "EDIT", "FULL_CONTROL"];
+const ANONYMOUS_LOGIN = "nexora-anonymous";
+
+/** SharePoint's anonymous access: a whole site, or single libraries and lists in a private site. */
+function AnonymousChoice({ node, onChanged }: { node: NodeDto; onChanged: () => void }) {
+  const qc = useQueryClient();
+  const key = ["anonymous", node.id];
+  const status = useQuery({ queryKey: key, queryFn: () => api<AnonymousStatus>(`/api/v1/nodes/${node.id}/anonymous`) });
+  const change = useMutation({
+    mutationFn: (enabled: boolean) => api<AnonymousStatus>(`/api/v1/nodes/${node.id}/anonymous`, { method: "PUT", body: { enabled } }),
+    onSuccess: (s) => {
+      qc.setQueryData(key, s);
+      onChanged();
+    },
+  });
+  const s = status.data;
+  if (!s?.available) return null;
+  const fromElsewhere = s.enabled && s.inherited;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <ErrorBar error={change.error} />
+      <Switch
+        checked={s.enabled}
+        disabled={fromElsewhere || change.isPending}
+        label="Anyone can read this without signing in"
+        onChange={(_, d) => change.mutate(d.checked)}
+      />
+      <Text block size={200}>
+        {fromElsewhere ? <>This comes from <Link to={routeFor(s.sourcePath)}>{s.sourcePath}</Link>.</>
+          : node.kind === "SITE" ? "Visitors can open everything here that does not have its own permissions, and see the names of the people who changed it."
+          : "Visitors can open this without seeing the rest of the site."}
+      </Text>
+    </div>
+  );
+}
 
 export function PermissionsDialog({ node, onClose }: { node: NodeDto; onClose: () => void }) {
   const qc = useQueryClient();
@@ -95,6 +130,9 @@ export function PermissionsDialog({ node, onClose }: { node: NodeDto; onClose: (
                   </MessageBar>
                 ) : null}
 
+                {(node.kind === "SITE" || node.kind === "LIBRARY" || node.kind === "LIST") && (
+                  <AnonymousChoice node={node} onChanged={() => qc.invalidateQueries({ queryKey: key })} />
+                )}
                 <Table size="small" aria-label="Permissions">
                   <TableHeader>
                     <TableRow>
@@ -115,7 +153,7 @@ export function PermissionsDialog({ node, onClose }: { node: NodeDto; onClose: (
                           />
                         </TableCell>
                         <TableCell>
-                          {unique ? (
+                          {unique && e.principal.login !== ANONYMOUS_LOGIN ? (
                             <Dropdown
                               size="small"
                               value={levelLabel[e.level]}

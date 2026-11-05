@@ -61,6 +61,10 @@ springdoc:
     path: /swagger-ui.html
 
 nexora:
+  admin:
+    backup-dir: ${NEXORA_BACKUP_DIR:./data/backups}
+    # encrypts stored SharePoint credentials; falls back to the WOPI token secret
+    secret-key: ${NEXORA_ADMIN_SECRET:}
   dav:
     # how desktop Office signs in over WebDAV: basic = the Windows credential prompt (the host must be in Office's
     # "Allow specified hosts to show Basic Authentication prompts" policy), forms = MS-OFBA sign-in window with SSO
@@ -79,6 +83,45 @@ nexora:
       create-bucket: ${NEXORA_S3_CREATE_BUCKET:true}
   sites:
     self-service: ${NEXORA_SELF_SERVICE_SITES:true}
+  mail:
+    # alerts and "shared with you" email
+    enabled: ${NEXORA_MAIL_ENABLED:false}
+    host: ${NEXORA_SMTP_HOST:localhost}
+    port: ${NEXORA_SMTP_PORT:25}
+    username: ${NEXORA_SMTP_USER:}
+    password: ${NEXORA_SMTP_PASSWORD:}
+    from: ${NEXORA_MAIL_FROM:NEXORA <nexora@localhost>}
+    start-tls: ${NEXORA_SMTP_STARTTLS:false}
+    # the address people use, for links in email
+    public-url: ${NEXORA_PUBLIC_URL:http://localhost:5173}
+    worker-enabled: ${NEXORA_MAIL_WORKER:true}
+  workflow:
+    # run rules from this server; turn off on all but one when several share a database
+    worker-enabled: ${NEXORA_WORKFLOW_WORKER:true}
+  sharing:
+    max-link-days: ${NEXORA_SHARE_MAX_LINK_DAYS:365}
+  search:
+    # lucene = embedded index on this server (development, small single-server installs); opensearch = a cluster
+    engine: ${NEXORA_SEARCH_ENGINE:lucene}
+    # turn off on all but one server when several share a database
+    worker-enabled: ${NEXORA_SEARCH_WORKER:true}
+    poll-interval: ${NEXORA_SEARCH_POLL:2s}
+    # documents read at the same time; OCR is slow and CPU-heavy
+    extract-threads: ${NEXORA_SEARCH_EXTRACT_THREADS:2}
+    # larger files are found by name and columns only
+    max-file-size: ${NEXORA_SEARCH_MAX_FILE:256MB}
+    max-text-chars: ${NEXORA_SEARCH_MAX_TEXT:1000000}
+    lucene:
+      path: ${NEXORA_SEARCH_LUCENE_PATH:./data/search}
+    opensearch:
+      url: ${NEXORA_OPENSEARCH_URL:http://localhost:9200}
+      index: ${NEXORA_OPENSEARCH_INDEX:nexora-content-v1}
+      username: ${NEXORA_OPENSEARCH_USER:}
+      password: ${NEXORA_OPENSEARCH_PASSWORD:}
+    tika:
+      # Apache Tika server for PDF, Office and OCR. Empty = built-in reader for text and modern Office files only.
+      url: ${NEXORA_TIKA_URL:}
+      timeout: ${NEXORA_TIKA_TIMEOUT:15m}
   identity:
     # Local accounts (bootstrap admin, break-glass). Directory users never have local passwords.
     local-login: ${NEXORA_LOCAL_LOGIN:true}

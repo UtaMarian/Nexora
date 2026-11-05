@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 public interface AclEntryRepository extends JpaRepository<AclEntry, UUID> {
@@ -16,6 +17,10 @@ public interface AclEntryRepository extends JpaRepository<AclEntry, UUID> {
     List<AclEntry> findByNodeIdAndPrincipalIdIn(UUID nodeId, Collection<UUID> principalIds);
 
     Optional<AclEntry> findByNodeIdAndPrincipalId(UUID nodeId, UUID principalId);
+
+    /** Every node with an ACL entry for one of these principals. Every level includes View. */
+    @Query("select distinct e.nodeId from AclEntry e where e.principalId in :principals")
+    Set<UUID> findNodeIdsByPrincipals(@Param("principals") Collection<UUID> principals);
 
     @Modifying
     @Query("delete from AclEntry e where e.nodeId = :nodeId")

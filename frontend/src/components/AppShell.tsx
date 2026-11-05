@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
+  Button,
+  CounterBadge,
   Input,
   Menu,
   MenuItem,
@@ -15,7 +17,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { TOASTER_ID } from "./ItemActions";
-import { DeleteRegular, HistoryRegular, HomeRegular, PeopleTeamRegular, SearchRegular, SignOutRegular } from "@fluentui/react-icons";
+import { AlertRegular, CheckmarkCircleRegular, ClockRegular, DeleteRegular, HomeRegular, PeopleCommunityRegular, SearchRegular, ShieldKeyholeRegular, SignOutRegular } from "@fluentui/react-icons";
 import { api } from "../api/client";
 import { useMe } from "./me";
 
@@ -38,7 +40,7 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase400,
     letterSpacing: "0.08em",
   },
-  search: { flex: 1, maxWidth: "560px", marginLeft: "auto", marginRight: "auto" },
+  search: { flex: 1, minWidth: 0, maxWidth: "560px", marginLeft: "auto", marginRight: "auto" },
   nav: { display: "flex", gap: "4px" },
   navLink: {
     color: tokens.colorNeutralForegroundOnBrand,
@@ -59,6 +61,11 @@ const useStyles = makeStyles({
 export function AppShell({ children }: { children: ReactNode }) {
   const s = useStyles();
   const me = useMe();
+  const waiting = useQuery({
+    queryKey: ["approvals", "count"], refetchInterval: 30000,
+    queryFn: () => api<{ waiting: number }>("/api/v1/me/approvals/count"),
+    enabled: !me.anonymous,
+  });
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
@@ -81,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link to="/" className={s.brand}>
           NEXORA
         </Link>
-        <form
+        {me.searchEnabled ? <form
           className={s.search}
           onSubmit={(e) => {
             e.preventDefault();
@@ -92,34 +99,40 @@ export function AppShell({ children }: { children: ReactNode }) {
             value={q}
             onChange={(_, d) => setQ(d.value)}
             contentBefore={<SearchRegular />}
-            placeholder="Search files, folders and libraries"
+            placeholder="Search documents, lists and pages"
             appearance="filled-lighter"
-            style={{ width: "100%" }}
+            style={{ width: "100%", minWidth: 0 }}
             aria-label="Search"
           />
-        </form>
+        </form> : <div className={s.search} />}
         <nav className={s.nav}>
           <NavLink to="/" className={s.navLink} title="Sites">
             <HomeRegular />
             <span>Sites</span>
           </NavLink>
-          <NavLink to="/recycle-bin" className={s.navLink} title="Recycle bin">
-            <DeleteRegular />
-            <span>Recycle bin</span>
-          </NavLink>
-          {me.admin && (
-            <NavLink to="/audit" className={s.navLink} title="Audit log">
-              <HistoryRegular />
-              <span>Audit</span>
-            </NavLink>
+          {!me.anonymous && (
+            <>
+              <NavLink to="/approvals" className={s.navLink} title="Approvals">
+                <CheckmarkCircleRegular />
+                <span>Approvals</span>
+                {!!waiting.data?.waiting && <CounterBadge count={waiting.data.waiting} size="small" color="danger" />}
+              </NavLink>
+              <NavLink to="/recycle-bin" className={s.navLink} title="Recycle bin">
+                <DeleteRegular />
+                <span>Recycle bin</span>
+              </NavLink>
+            </>
           )}
           {me.admin && (
-            <NavLink to="/admin/directory" className={s.navLink} title="Directory">
-              <PeopleTeamRegular />
-              <span>Directory</span>
+            <NavLink to="/admin" className={s.navLink} title="Central Administration">
+              <ShieldKeyholeRegular />
+              <span>Central Administration</span>
             </NavLink>
           )}
         </nav>
+        {me.anonymous ? (
+          <Button onClick={() => window.dispatchEvent(new Event("nexora:unauthorized"))}>Sign in</Button>
+        ) : (
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <button className={s.avatarBtn} aria-label="Account">
@@ -137,12 +150,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Text>
             </div>
             <MenuList>
+              <MenuItem icon={<ClockRegular />} onClick={() => navigate("/recent")}>Recent</MenuItem>
+              <MenuItem icon={<PeopleCommunityRegular />} onClick={() => navigate("/shared")}>Shared with me</MenuItem>
+              <MenuItem icon={<AlertRegular />} onClick={() => navigate("/alerts")}>My alerts</MenuItem>
               <MenuItem icon={<SignOutRegular />} onClick={signOut}>
                 Sign out
               </MenuItem>
             </MenuList>
           </MenuPopover>
         </Menu>
+        )}
       </header>
       <main className={s.main}>{children}</main>
       <Toaster toasterId={TOASTER_ID} position="bottom-end" />

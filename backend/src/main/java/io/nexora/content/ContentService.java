@@ -10,6 +10,10 @@ import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
 import io.nexora.identity.Principal;
 import io.nexora.identity.PrincipalRepository;
+import io.nexora.lists.ItemHistory;
+import io.nexora.lists.ItemVersion;
+import io.nexora.lists.ItemVersionRepository;
+import io.nexora.search.SearchQueue;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -37,14 +41,23 @@ public class ContentService {
     private final AuditService audit;
     private final BlobGarbageCollector gc;
     private final EditLockService editLocks;
+    private final SearchQueue search;
+    private final ItemHistory itemHistory;
+    private final ItemVersionRepository itemVersions;
+    private final QuotaService quotas;
     private final boolean selfServiceSites;
 
     public ContentService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                           PrincipalRepository principals, GroupMemberRepository members,
                           PermissionService permissions, AuditService audit, BlobGarbageCollector gc,
-                          EditLockService editLocks,
+                          EditLockService editLocks, SearchQueue search, ItemHistory itemHistory,
+                          ItemVersionRepository itemVersions, QuotaService quotas,
                           @Value("${nexora.sites.self-service:true}") boolean selfServiceSites) {
+        this.quotas = quotas;
         this.editLocks = editLocks;
+        this.search = search;
+        this.itemHistory = itemHistory;
+        this.itemVersions = itemVersions;
         this.nodes = nodes;
         this.versions = versions;
         this.columns = columns;
@@ -58,6 +71,7 @@ public class ContentService {
 
     /** URL segment of a site's modern pages (/sites/hr/SitePages/home.aspx); no library or list may use it. */
     public static final String RESERVED_PAGES_NAME = "SitePages";
+    private static final int MAX_SITE_DEPTH = 4;
 
     // ---- lookup ----------------------------------------------------------------------------
 
@@ -73,11 +87,31 @@ public class ContentService {
     public Node resolve(CurrentUser user, String path) {
         // Try the path as given first (names may contain '%'), then URL-decoded (old SharePoint links).
         String raw = cleanPath(path);
-        Node node = nodes.findLiveByPath(raw)
-                .or(() -> nodes.findLiveByPath(normalizePath(path)))
-                .orElseThrow(() -> ApiException.notFound("Item"));
-        permissions.require(user, node, Right.VIEW);
-        return node;
+        Optional<Node> node = nodes.findLiveByPath(raw).or(() -> nodes.findLiveByPath(normalizePath(path)));
+        if (node.isPresent() && permissions.has(user, node.get(), Right.VIEW)) return node.get();
+        throw refused(user, node.map(Node::getPath).orElse(normalizePath(path)));
+    }
+
+    /**
+     * For an address typed into the browser. The answer depends only on the site in the address, never on what is
+     * below it, so asking about a file says nothing about whether the file exists.
+     */
+    @Transactional(readOnly = true)
+    public Node resolveAddress(CurrentUser user, String decodedPath) {
+        Optional<Node> node = nodes.findLiveByPath(decodedPath);
+        if (node.isPresent() && permissions.has(user, node.get(), Right.VIEW)) return node.get();
+        throw refused(user, decodedPath);
+    }
+
+    private ApiException refused(CurrentUser user, String path) {
+        if (user.anonymous()) return new ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED, "sign_in_required", "Sign in to see this");
+        for (String p = path; p != null && p.startsWith("/sites/"); p = p.substring(0, p.lastIndexOf('/'))) {
+            Optional<Node> found = nodes.findLiveByPath(p).filter(n -> n.getKind() == Node.Kind.SITE);
+            if (found.isEmpty()) continue;
+            if (permissions.has(user, found.get(), Right.VIEW)) break;
+            return new ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "site_not_shared", "This site wasn't shared with you");
+        }
+        return ApiException.notFound("Item");
     }
 
     /** Like {@link #resolve} for a path that is already percent-decoded (e.g. a servlet path). */
@@ -91,7 +125,8 @@ public class ContentService {
     @Transactional(readOnly = true)
     public List<Node> children(CurrentUser user, UUID parentId) {
         Node parent = get(user, parentId);
-        if (!parent.getKind().isContainer()) throw ApiException.badRequest("not_a_container", "Files have no children");
+        boolean holdsFiles = parent.getKind().isContainer() || parent.getKind() == Node.Kind.LIST_ITEM; // attachments
+        if (!holdsFiles) throw ApiException.badRequest("not_a_container", "Files have no children");
         return permissions.filterVisible(user, nodes.findLiveChildren(parent.getId()));
     }
 
@@ -102,6 +137,7 @@ public class ContentService {
         Node current = node;
         while (current != null) {
             chain.addFirst(current);
+            if (current.getKind() == Node.Kind.SITE) break; // a subsite's content starts at the subsite
             current = current.getParentId() == null ? null : nodes.findById(current.getParentId()).orElse(null);
         }
         return chain;
@@ -111,10 +147,15 @@ public class ContentService {
     public Node libraryOf(Node node) {
         if (node.getKind().hasColumns()) return node;
         if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("not_in_library", "Sites are not in a library or list");
-        String[] seg = node.getPath().split("/");   // "", "sites", site, library, ...
-        String libPath = "/" + seg[1] + "/" + seg[2] + "/" + seg[3];
-        return nodes.findLiveByPath(libPath)
-                .orElseThrow(() -> new IllegalStateException("No library for " + node.getPath()));
+        Node current = node;
+        while (!current.getKind().hasColumns()) {
+            UUID parent = current.getParentId();
+            current = parent == null ? null : nodes.findById(parent).orElse(null);
+            if (current == null || current.getKind() == Node.Kind.SITE) {
+                throw new IllegalStateException("No library for " + node.getPath());
+            }
+        }
+        return current;
     }
 
     @Transactional(readOnly = true)
@@ -148,15 +189,47 @@ public class ContentService {
         site.setTitle(title == null || title.isBlank() ? name : title.strip());
         site.setDescription(description);
         nodes.save(site);
+        return provision(user, site, true);
+    }
 
-        String t = site.getTitle();
-        Principal owners = principals.save(Principal.group(name + "-owners", t + " Owners", site.getId()));
-        Principal membersGroup = principals.save(Principal.group(name + "-members", t + " Members", site.getId()));
-        Principal visitors = principals.save(Principal.group(name + "-visitors", t + " Visitors", site.getId()));
-        members.save(new GroupMember(owners.getId(), user.id()));
-        permissions.grant(site, owners.getId(), PermissionLevel.FULL_CONTROL);
-        permissions.grant(site, membersGroup.getId(), PermissionLevel.EDIT);
-        permissions.grant(site, visitors.getId(), PermissionLevel.READ);
+    /**
+     * Creates a site inside a site. With {@code uniquePermissions} it gets its own Owners, Members and Visitors, and its
+     * creator owns it. Without, it shares its parent's permissions and groups.
+     */
+    public Node createSubsite(CurrentUser user, UUID parentId, String slug, String title, String description, boolean uniquePermissions) {
+        Node parent = get(user, parentId);
+        if (parent.getKind() != Node.Kind.SITE) throw ApiException.badRequest("not_a_site", "Subsites live in a site");
+        permissions.require(user, parent, Right.MANAGE_WEB);
+        int depth = parent.getPath().split("/").length - 2;
+        if (depth >= MAX_SITE_DEPTH) throw ApiException.badRequest("too_deep", "Sites can be nested " + MAX_SITE_DEPTH + " levels deep");
+        String name = Names.siteSlug(slug);
+        assertNoSibling(parent, name);
+        Node site = Node.create(Node.Kind.SITE, parent, name, user.id());
+        site.setTitle(title == null || title.isBlank() ? name : title.strip());
+        site.setDescription(description);
+        site.setInheritsPermissions(!uniquePermissions);
+        nodes.save(site);
+        return provision(user, site, uniquePermissions);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Node> subsites(CurrentUser user, UUID siteId) {
+        Node site = get(user, siteId);
+        return permissions.filterVisible(user, nodes.findLiveChildren(site.getId()).stream().filter(n -> n.getKind() == Node.Kind.SITE).toList());
+    }
+
+    private Node provision(CurrentUser user, Node site, boolean ownGroups) {
+        if (ownGroups) {
+            String prefix = site.groupPrefix();
+            String t = site.getTitle();
+            Principal owners = principals.save(Principal.group(prefix + "-owners", t + " Owners", site.getId()));
+            Principal membersGroup = principals.save(Principal.group(prefix + "-members", t + " Members", site.getId()));
+            Principal visitors = principals.save(Principal.group(prefix + "-visitors", t + " Visitors", site.getId()));
+            members.save(new GroupMember(owners.getId(), user.id()));
+            permissions.grant(site, owners.getId(), PermissionLevel.FULL_CONTROL);
+            permissions.grant(site, membersGroup.getId(), PermissionLevel.EDIT);
+            permissions.grant(site, visitors.getId(), PermissionLevel.READ);
+        }
 
         Node library = Node.create(Node.Kind.LIBRARY, site, DEFAULT_LIBRARY, user.id());
         library.setTitle("Documents");
@@ -239,6 +312,7 @@ public class ContentService {
         item.setMetadata(metadata);
         nodes.save(item);
         list.touch(user.id());
+        itemHistory.record(item, user.id());
         audit.record(user, "ITEM_CREATE", item, Map.of("title", item.getTitle()));
         return item;
     }
@@ -264,12 +338,15 @@ public class ContentService {
         if (settings.maxVersions() != null && settings.maxVersions() < 1) {
             throw ApiException.badRequest("invalid_settings", "maxVersions must be at least 1");
         }
+        boolean hidDrafts = LibrarySettings.of(lib).hidesDrafts();
         settings.applyTo(lib);
+        if (hidDrafts != settings.hidesDrafts()) search.subtree(lib.getId()); // the index must hold what readers may find
         lib.touch(user.id());
         audit.record(user, "LIBRARY_SETTINGS_UPDATE", lib, Map.of(
                 "versioningEnabled", settings.versioningEnabled(),
                 "minorVersionsEnabled", settings.minorVersionsEnabled(),
-                "requireCheckout", settings.requireCheckout()));
+                "requireCheckout", settings.requireCheckout(),
+                "draftVisibility", settings.draftVisibility().name()));
         return settings;
     }
 
@@ -286,7 +363,11 @@ public class ContentService {
         };
         permissions.require(user, node, needed);
         assertNotLockedByOthers(user, node);
-        if (node.getKind() == Node.Kind.LIST_ITEM) {
+        boolean item = node.getKind() == Node.Kind.LIST_ITEM;
+        String oldTitle = node.getTitle();
+        Map<String, Object> oldValues = new HashMap<>(node.getMetadata());
+        if (item) {
+            itemHistory.baseline(node);
             if (newName != null && !newName.equals(node.getName())) {
                 throw ApiException.badRequest("item_id_immutable", "List item IDs cannot be changed; edit the Title instead");
             }
@@ -317,11 +398,18 @@ public class ContentService {
             audit.record(user, "METADATA_UPDATE", node, Map.of("fields", new ArrayList<>(metadataPatch.keySet())));
         }
         node.touch(user.id());
+        search.node(node.getId()); // title and description changes have no audit event of their own
+        if (item && !(Objects.equals(oldTitle, node.getTitle()) && oldValues.equals(node.getMetadata()))) {
+            itemHistory.record(node, user.id());
+            if (!Objects.equals(oldTitle, node.getTitle())) refreshLookups(node);
+            if (metadataPatch == null) audit.record(user, "ITEM_UPDATE", node, Map.of("title", String.valueOf(node.getTitle())));
+        }
         return node;
     }
 
     public Node move(CurrentUser user, UUID id, UUID targetParentId) {
         Node node = get(user, id);
+        if (node.getKind() == Node.Kind.SITE) throw ApiException.badRequest("site_url_immutable", "A site cannot be moved");
         if (node.getKind() != Node.Kind.FILE && node.getKind() != Node.Kind.FOLDER) {
             throw ApiException.badRequest("not_movable", "Only files and folders can be moved");
         }
@@ -338,6 +426,7 @@ public class ContentService {
         permissions.require(user, target, Right.ADD_ITEMS);
         assertNotLockedByOthers(user, node);
         assertNoSibling(target, node.getName());
+        quotas.admitMove(node, target);
 
         String oldPath = node.getPath();
         relocate(node, target);
@@ -365,7 +454,9 @@ public class ContentService {
         Node node = get(user, id);
         switch (node.getKind()) {
             case SITE -> {
-                if (!user.admin()) throw ApiException.forbidden("Only administrators can delete sites");
+                boolean parentOwner = node.getParentId() != null && nodes.findLive(node.getParentId())
+                        .filter(parent -> permissions.has(user, parent, Right.MANAGE_WEB)).isPresent();
+                if (!user.admin() && !parentOwner) throw ApiException.forbidden("Only administrators can delete sites");
             }
             case LIBRARY, LIST -> permissions.require(user, node, Right.MANAGE_LISTS);
             default -> permissions.require(user, node, Right.DELETE_ITEMS);
@@ -401,10 +492,79 @@ public class ContentService {
         return nodes.findById(root.getId()).orElseThrow();
     }
 
+    /** Lookup values keep the title they point at, so a renamed item must be renamed everywhere it is used. */
+    private void refreshLookups(Node item) {
+        for (ColumnDef column : columns.findByLookupListId(item.getParentId())) {
+            for (Node row : nodes.findLiveChildren(column.getLibraryId())) {
+                if (row.getMetadata().get(column.getInternalName()) instanceof Map<?, ?> value
+                        && item.getName().equals(String.valueOf(value.get("lookupId")))) {
+                    Map<String, Object> metadata = new HashMap<>(row.getMetadata());
+                    metadata.put(column.getInternalName(), lookupValue(item));
+                    row.setMetadata(metadata);
+                    search.node(row.getId());
+                }
+            }
+        }
+    }
+
+    private static Map<String, Object> lookupValue(Node item) {
+        return Map.of("lookupId", Integer.parseInt(item.getName()), "title", item.getTitle());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ItemVersion> itemHistory(CurrentUser user, UUID itemId) {
+        return itemVersions.findByItemIdOrderByVersionDesc(listItem(user, itemId).getId());
+    }
+
+    /** Makes an earlier version current again, as a new version, so nothing is lost. */
+    public Node restoreItemVersion(CurrentUser user, UUID itemId, int version) {
+        Node item = listItem(user, itemId);
+        permissions.require(user, item, Right.EDIT_ITEMS);
+        assertNotLockedByOthers(user, item);
+        ItemVersion v = itemVersions.findByItemIdAndVersion(item.getId(), version).orElseThrow(() -> ApiException.notFound("Version"));
+        itemHistory.baseline(item);
+        boolean renamed = !Objects.equals(item.getTitle(), v.getTitle());
+        item.setTitle(v.getTitle());
+        item.setMetadata(new HashMap<>(v.getMetadata()));
+        item.touch(user.id());
+        nodes.save(item);
+        itemHistory.record(item, user.id());
+        if (renamed) refreshLookups(item);
+        audit.record(user, "ITEM_RESTORE", item, Map.of("version", version));
+        return item;
+    }
+
+    private Node listItem(CurrentUser user, UUID itemId) {
+        Node item = get(user, itemId);
+        if (item.getKind() != Node.Kind.LIST_ITEM) throw ApiException.badRequest("not_an_item", "Not a list item");
+        return item;
+    }
+
+    /** Images attached to the items of a list that the user can see. */
+    @Transactional(readOnly = true)
+    public List<Node> attachedImages(CurrentUser user, UUID listId) {
+        Node list = get(user, listId);
+        if (list.getKind() != Node.Kind.LIST) throw ApiException.badRequest("not_a_list", "Not a list");
+        List<Node> images = nodes.findLiveDescendants(NodeRepository.likePrefix(list.getPath())).stream()
+                .filter(n -> n.getKind() == Node.Kind.FILE && n.getMimeType() != null && n.getMimeType().startsWith("image/"))
+                .sorted(Comparator.comparing(Node::getName, String.CASE_INSENSITIVE_ORDER)).toList();
+        return permissions.filterVisible(user, images);
+    }
+
+    /** The files in the site's Templates library. */
+    @Transactional(readOnly = true)
+    public List<Node> documentTemplates(CurrentUser user, UUID siteId) {
+        Node site = get(user, siteId);
+        return nodes.findLiveByPath(site.getPath() + "/Templates").filter(n -> n.getKind() == Node.Kind.LIBRARY)
+                .map(library -> permissions.filterVisible(user, nodes.findLiveChildren(library.getId())).stream()
+                        .filter(n -> n.getKind() == Node.Kind.FILE).toList())
+                .orElse(List.of());
+    }
+
     /** Permanently deletes a recycle-bin item, its descendants, all versions and unreferenced blobs. */
     public void purge(CurrentUser user, UUID id) {
         Node root = deletedRoot(user, id);
-        List<Node> subtree = new ArrayList<>(nodes.findByDeletedRootId(root.getId()));
+        List<Node> subtree = wholeSubtree(root);
         // children before parents so the parent_id foreign key is never violated
         subtree.sort(Comparator.comparingInt((Node n) -> n.getPath().length()).reversed());
         List<UUID> ids = subtree.stream().map(Node::getId).toList();
@@ -417,9 +577,29 @@ public class ContentService {
             columns.deleteAll(columns.findByLibraryIdOrderByPosition(n.getId()));
             nodes.delete(n);
             nodes.flush();
+            search.node(n.getId());
+        }
+        // a purged site frees its URL, so its Owners, Members and Visitors groups go too, and those of its subsites
+        for (Node n : subtree) {
+            if (n.getKind() == Node.Kind.SITE) principals.deleteAll(principals.findBySiteId(n.getId()));
         }
         gc.deleteIfOrphanedAfterCommit(keys);
         audit.record(user, "PURGE", root, Map.of("items", subtree.size()));
+    }
+
+    /** The item and everything under it, including children deleted earlier, which have their own recycle bin entry. */
+    private List<Node> wholeSubtree(Node root) {
+        Map<UUID, Node> found = new LinkedHashMap<>();
+        found.put(root.getId(), root);
+        Set<UUID> frontier = Set.of(root.getId());
+        while (!frontier.isEmpty()) {
+            Set<UUID> next = new HashSet<>();
+            for (Node child : nodes.findByParentIdIn(frontier)) {
+                if (found.putIfAbsent(child.getId(), child) == null) next.add(child.getId());
+            }
+            frontier = next;
+        }
+        return new ArrayList<>(found.values());
     }
 
     private Node deletedRoot(CurrentUser user, UUID id) {
@@ -432,7 +612,11 @@ public class ContentService {
 
     private boolean canManageDeleted(CurrentUser user, Node deleted) {
         if (user.admin()) return true;
-        if (deleted.getKind() == Node.Kind.SITE) return false;
+        if (deleted.getKind() == Node.Kind.SITE) {
+            // whoever runs the parent site looks after its subsites
+            return deleted.getParentId() != null && nodes.findById(deleted.getParentId())
+                    .filter(parent -> !parent.isDeleted() && permissions.has(user, parent, Right.MANAGE_WEB)).isPresent();
+        }
         if (user.id().equals(deleted.getDeletedBy())) return true;
         return nodes.findById(deleted.getSiteId())
                 .map(site -> permissions.has(user, site, Right.MANAGE_WEB))
@@ -448,7 +632,7 @@ public class ContentService {
     }
 
     public ColumnDef addColumn(CurrentUser user, UUID libraryId, String displayName, ColumnDef.Type type,
-                               boolean required, List<String> choices) {
+                               boolean required, List<String> choices, UUID lookupListId) {
         Node lib = get(user, libraryId);
         if (!lib.getKind().hasColumns()) throw ApiException.badRequest("not_a_library", "Not a library or list");
         permissions.require(user, lib, Right.MANAGE_LISTS);
@@ -458,6 +642,13 @@ public class ContentService {
         if (type == ColumnDef.Type.CHOICE && (choices == null || choices.isEmpty())) {
             throw ApiException.badRequest("invalid_column", "A choice column needs at least one choice");
         }
+        if (type == ColumnDef.Type.LOOKUP) {
+            if (lookupListId == null) throw ApiException.badRequest("invalid_column", "A lookup column needs a list to look up");
+            Node target = get(user, lookupListId);
+            if (target.getKind() != Node.Kind.LIST || !target.getSiteId().equals(lib.getSiteId())) {
+                throw ApiException.badRequest("invalid_column", "A lookup column must point at a list in the same site");
+            }
+        }
         List<ColumnDef> existing = columns.findByLibraryIdOrderByPosition(lib.getId());
         String base = Names.columnInternalName(displayName);
         String internal = base;
@@ -466,6 +657,7 @@ public class ContentService {
         for (int i = 1; taken.contains(internal); i++) internal = base + i;
         ColumnDef col = columns.save(new ColumnDef(lib.getId(), internal, displayName.strip(), type, required,
                 choices, existing.size()));
+        if (type == ColumnDef.Type.LOOKUP) col.setLookupListId(lookupListId);
         audit.record(user, "COLUMN_ADD", lib, Map.of("column", internal, "type", type.name()));
         return col;
     }
@@ -534,6 +726,15 @@ public class ContentService {
                 } catch (DateTimeParseException ex) {
                     throw ApiException.badRequest("invalid_value", label + " must be a date (YYYY-MM-DD)");
                 }
+            }
+            case LOOKUP -> {
+                Object ref = value instanceof Map<?, ?> m ? m.get("lookupId") : value;
+                String itemId = String.valueOf(ref).strip();
+                Node item = !itemId.matches("\\d{1,9}") || def.getLookupListId() == null ? null : nodes.findLive(def.getLookupListId())
+                        .flatMap(list -> nodes.findLiveByPath(list.getPath() + "/" + itemId))
+                        .filter(n -> n.getKind() == Node.Kind.LIST_ITEM).orElse(null);
+                if (item == null) throw ApiException.badRequest("invalid_value", label + " must be an item of the list it looks up");
+                yield lookupValue(item);
             }
             case CHOICE -> {
                 String s = value.toString();

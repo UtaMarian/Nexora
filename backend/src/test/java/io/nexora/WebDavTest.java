@@ -229,6 +229,22 @@ class WebDavTest extends ApiTestSupport {
     }
 
     @Test
+    void mappedDrivesSeeSubsitesInsideTheirParentOnly() throws Exception {
+        setUp();
+        String site = "/sites/dav-" + suffix;
+        UUID parent = fileId(site);
+        UUID sub = id(call(owner, jsonBody(post("/api/v1/sites/{id}/subsites", parent), java.util.Map.of("url", "team", "title", "Team")), 201));
+        upload(owner, defaultLibrary(owner, sub), "Doc.txt", "x", false, 201);
+
+        assertThat(dav(owner, "PROPFIND", site, null, "Depth", "1").body()).contains("/dav" + site + "/team/");
+        assertThat(dav(owner, "PROPFIND", site + "/team/Shared Documents", null, "Depth", "1").body()).contains("Doc.txt");
+        assertThat(dav(owner, "GET", site + "/team/Shared Documents/Doc.txt", null).body()).isEqualTo("x");
+        // the list of sites holds top-level sites: a deeper address there is not a child of that folder
+        assertThat(dav(owner, "PROPFIND", "/sites", null, "Depth", "1").body())
+                .contains("/dav" + site + "/").doesNotContain("/dav" + site + "/team");
+    }
+
+    @Test
     void hiddenItemsAreHiddenOverWebDavToo() throws Exception {
         setUp();
         UUID secret = id(call(owner, jsonBody(post("/api/v1/nodes/{id}/folders", libId),

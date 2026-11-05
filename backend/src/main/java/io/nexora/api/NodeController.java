@@ -75,14 +75,21 @@ public class NodeController {
     public LibrarySettingsDto settings(@PathVariable UUID id) {
         CurrentUser user = CurrentUser.get();
         LibrarySettings s = LibrarySettings.of(content.libraryOf(content.get(user, id)));
-        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions());
+        return dto(s);
     }
 
     @PutMapping("/nodes/{id}/settings")
     public LibrarySettingsDto updateSettings(@PathVariable UUID id, @RequestBody LibrarySettingsDto body) {
-        LibrarySettings s = content.updateLibrarySettings(CurrentUser.get(), id, new LibrarySettings(
-                body.versioningEnabled(), body.minorVersionsEnabled(), body.requireCheckout(), body.maxVersions()));
-        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions());
+        CurrentUser user = CurrentUser.get();
+        // a caller that does not know the field must not reopen a library's drafts
+        LibrarySettings.DraftVisibility drafts = body.draftVisibility() != null ? body.draftVisibility()
+                : LibrarySettings.of(content.libraryOf(content.get(user, id))).draftVisibility();
+        return dto(content.updateLibrarySettings(user, id, new LibrarySettings(
+                body.versioningEnabled(), body.minorVersionsEnabled(), body.requireCheckout(), body.maxVersions(), drafts)));
+    }
+
+    private static LibrarySettingsDto dto(LibrarySettings s) {
+        return new LibrarySettingsDto(s.versioningEnabled(), s.minorVersionsEnabled(), s.requireCheckout(), s.maxVersions(), s.draftVisibility());
     }
 
     @GetMapping("/nodes/{id}/columns")
@@ -94,7 +101,7 @@ public class NodeController {
     @ResponseStatus(HttpStatus.CREATED)
     public ColumnDto addColumn(@PathVariable UUID id, @Valid @RequestBody CreateColumnRequest body) {
         return ColumnDto.of(content.addColumn(CurrentUser.get(), id, body.displayName(), body.type(), body.required(),
-                body.choices()));
+                body.choices(), body.lookupListId()));
     }
 
     @DeleteMapping("/nodes/{id}/columns/{columnId}")
@@ -102,15 +109,6 @@ public class NodeController {
     public void deleteColumn(@PathVariable UUID id, @PathVariable UUID columnId) {
         content.deleteColumn(CurrentUser.get(), id, columnId);
     }
-
-    // ---- search (name/title match until the OpenSearch module lands) ----
-
-    @GetMapping("/search")
-    public List<NodeDto> search(@RequestParam String q, @RequestParam(defaultValue = "50") int limit) {
-        CurrentUser user = CurrentUser.get();
-        return mapper.many(user, content.search(user, q, Math.min(Math.max(limit, 1), 200)));
-    }
-
     private NodeDetail detail(CurrentUser user, Node node) {
         List<Crumb> crumbs = content.ancestry(node).stream()
                 .map(n -> new Crumb(n.getId(), n.getKind(), n.getName(), n.getTitle(), n.getPath()))

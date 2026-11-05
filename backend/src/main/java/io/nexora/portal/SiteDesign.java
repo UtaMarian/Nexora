@@ -14,6 +14,9 @@ import java.util.UUID;
  */
 public record SiteDesign(String theme, Header header, List<Link> navigation, Home home) {
 
+    private static final int MAX_MENU_COLUMNS = 6;
+    private static final int MAX_MENU_LINKS = 12;
+
     public static final Set<String> THEMES = Set.of("blue", "teal", "green", "purple", "red", "orange", "gray", "dark");
 
     public record Header(String layout, String background, boolean showTitle, boolean showLogo) {
@@ -21,7 +24,15 @@ public record SiteDesign(String theme, Header header, List<Link> navigation, Hom
         public static final Set<String> BACKGROUNDS = Set.of("none", "soft", "strong");
     }
 
-    public record Link(String label, String url) {}
+    /** A navigation entry. With {@code groups} it opens a mega menu, and it then needs no address of its own. */
+    public record Link(String label, String url, List<LinkGroup> groups) {
+        public Link(String label, String url) {
+            this(label, url, null);
+        }
+    }
+
+    /** One column of a mega menu. */
+    public record LinkGroup(String heading, List<Link> links) {}
 
     public record Home(String welcomeTitle, String welcome, List<Link> quickLinks, boolean showNews, UUID newsListId,
                        boolean showLibraries, boolean showLists) {}
@@ -57,7 +68,7 @@ public record SiteDesign(String theme, Header header, List<Link> navigation, Hom
                 new Home(welcomeTitle, welcome, quick, hm.showNews(), hm.newsListId(), hm.showLibraries(), hm.showLists()));
     }
 
-    private static List<Link> links(List<Link> in, int max, String what) {
+    public static List<Link> links(List<Link> in, int max, String what) {
         if (in.size() > max) throw ApiException.badRequest("invalid_design", what + ": at most " + max + " links");
         List<Link> out = new ArrayList<>();
         for (Link l : in) {
@@ -66,10 +77,26 @@ public record SiteDesign(String theme, Header header, List<Link> navigation, Hom
             if (label.isEmpty() || label.length() > 60) {
                 throw ApiException.badRequest("invalid_design", what + ": every link needs a label of at most 60 characters");
             }
-            if (!SafeUrls.isSafe(url)) {
+            List<LinkGroup> groups = groups(l.groups(), label);
+            boolean menu = groups != null;
+            if (!(menu && url.isEmpty()) && !SafeUrls.isSafe(url)) {
                 throw ApiException.badRequest("invalid_design", what + ": '" + label + "' must link to https://..., mailto: or a /sites/... path");
             }
-            out.add(new Link(label, url));
+            out.add(new Link(label, url.isEmpty() ? null : url, groups));
+        }
+        return out;
+    }
+
+    private static List<LinkGroup> groups(List<LinkGroup> in, String label) {
+        if (in == null || in.isEmpty()) return null;
+        if (in.size() > MAX_MENU_COLUMNS) throw ApiException.badRequest("invalid_design", "'" + label + "' can have at most " + MAX_MENU_COLUMNS + " columns");
+        List<LinkGroup> out = new ArrayList<>();
+        for (LinkGroup g : in) {
+            String heading = g.heading() == null ? "" : g.heading().strip();
+            if (heading.length() > 60) throw ApiException.badRequest("invalid_design", "A menu heading can be at most 60 characters");
+            List<Link> flat = new ArrayList<>();
+            for (Link l : g.links() == null ? List.<Link>of() : g.links()) flat.add(new Link(l.label(), l.url())); // one level deep
+            out.add(new LinkGroup(heading, links(flat, MAX_MENU_LINKS, "'" + label + "'")));
         }
         return out;
     }

@@ -23,7 +23,13 @@ function csrfHeaders(method: string): Record<string, string> {
   return token ? { "X-XSRF-TOKEN": decodeURIComponent(token) } : {};
 }
 
-async function toError(res: Response): Promise<ApiError> {
+/** True while someone reads public content without signing in. */
+let visitor = false;
+export const setVisitor = (v: boolean) => {
+  visitor = v;
+};
+
+async function toError(res: Response, method = "POST"): Promise<ApiError> {
   let code = "http_" + res.status;
   let message = res.statusText || "Request failed";
   try {
@@ -33,7 +39,10 @@ async function toError(res: Response): Promise<ApiError> {
   } catch {
     /* not JSON */
   }
-  if (res.status === 401) window.dispatchEvent(new Event("nexora:unauthorized"));
+  // a visitor is sent to sign in for a page or an action, not for something a public page merely left out
+  if (res.status === 401 && (!visitor || code === "sign_in_required" || method !== "GET")) {
+    window.dispatchEvent(new Event("nexora:unauthorized"));
+  }
   return new ApiError(res.status, code, message);
 }
 
@@ -46,7 +55,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     body = JSON.stringify(init.body);
   }
   const res = await fetch(path, { method, headers, body, credentials: "same-origin" });
-  if (!res.ok) throw await toError(res);
+  if (!res.ok) throw await toError(res, method);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;

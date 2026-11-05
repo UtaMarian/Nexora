@@ -13,6 +13,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class DocumentLibraryTest extends ApiTestSupport {
 
     @Test
+    void purgingAFolderAlsoRemovesItemsDeletedFromItEarlier() throws Exception {
+        String owner = createUser("owner");
+        UUID site = id(createSite(owner, "purge-" + suffix));
+        UUID lib = defaultLibrary(owner, site);
+        UUID folder = id(call(owner, jsonBody(post("/api/v1/nodes/{id}/folders", lib), Map.of("name", "Old")), 201));
+        UUID file = id(upload(owner, folder, "first.txt", "deleted before its folder", false, 201));
+        upload(owner, folder, "second.txt", "deleted with its folder", false, 201);
+
+        call(owner, delete("/api/v1/nodes/{id}", file), 204);
+        call(owner, delete("/api/v1/nodes/{id}", folder), 204);
+        call(owner, delete("/api/v1/recycle-bin/{id}", folder), 204);
+
+        assertThat(call(owner, get("/api/v1/recycle-bin").param("siteId", site.toString()), 200)).isEmpty();
+    }
+
+    @Test
     void siteCreationProvisionsGroupsAndDefaultLibrary() throws Exception {
         String owner = createUser("owner");
         JsonNode site = createSite(owner, "team-" + suffix);

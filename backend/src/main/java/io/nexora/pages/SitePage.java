@@ -16,7 +16,8 @@ import java.util.UUID;
 @Table(name = "site_page")
 public class SitePage {
 
-    public enum Kind { PAGE, NEWS }
+    /** A TEMPLATE is a starting point: it stays a draft, and is never published or shown to readers. */
+    public enum Kind { PAGE, NEWS, TEMPLATE }
 
     @Id
     private UUID id;
@@ -59,6 +60,29 @@ public class SitePage {
         this.createdBy = actor;
         this.createdAt = Instant.now();
         touch(actor);
+    }
+
+    /** Recreates a page from a backup or another farm (new id, same content and history counters). */
+    public static SitePage restored(UUID siteId, String name, Kind kind, String title, String description,
+                                    UUID banner, Map<String, Object> canvas, String draftTitle, String draftDescription,
+                                    UUID draftBanner, Map<String, Object> draftCanvas, int publishedVersion,
+                                    UUID createdBy, Instant createdAt, UUID modifiedBy, Instant modifiedAt,
+                                    UUID publishedBy, Instant publishedAt) {
+        SitePage p = new SitePage(siteId, name, kind, title, createdBy);
+        p.description = description;
+        p.bannerImageId = banner;
+        p.canvas = canvas;
+        p.draftTitle = draftTitle;
+        p.draftDescription = draftDescription;
+        p.draftBannerId = draftBanner;
+        p.draftCanvas = draftCanvas;
+        p.publishedVersion = publishedVersion;
+        if (createdAt != null) p.createdAt = createdAt;
+        p.modifiedBy = modifiedBy == null ? createdBy : modifiedBy;
+        if (modifiedAt != null) p.modifiedAt = modifiedAt;
+        p.publishedBy = publishedBy;
+        p.publishedAt = publishedAt;
+        return p;
     }
 
     public void touch(UUID actor) {

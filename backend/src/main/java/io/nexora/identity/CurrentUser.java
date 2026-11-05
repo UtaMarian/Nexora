@@ -18,6 +18,17 @@ public record CurrentUser(UUID id, String login, String displayName, boolean adm
         throw new ApiException(HttpStatus.UNAUTHORIZED, "unauthenticated", "Not signed in");
     }
 
+    /** Someone reading without signing in. They hold only what anonymous access gives them. */
+    public boolean anonymous() {
+        return AnonymousAccess.LOGIN.equals(login);
+    }
+
+    /** Whether this request came from an anonymous visitor. False outside a request. */
+    public static boolean anonymousRequest() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof NexoraPrincipal u && AnonymousAccess.LOGIN.equals(u.getLogin());
+    }
+
     /** For background jobs and bootstrap code that run outside a request. */
     public static CurrentUser system(Principal p) {
         return new CurrentUser(p.getId(), p.getLogin(), p.getDisplayName(), true);
