@@ -212,6 +212,22 @@ See [intranet.md](intranet.md) for what these do.
 - **Templates are `SitePage` rows of kind `TEMPLATE`.** They use the page editor's storage and travel in packages, and
   `PageService` keeps them out of lists and refuses to publish them. Built-in layouts are the `PageTemplate` enum.
 
+## Anonymous access
+
+See [anonymous-access.md](anonymous-access.md) for what this does.
+
+- **Anonymous is an account, not a special case.** Owners give the built-in `nexora-anonymous` account Read, so
+  `PermissionService` decides as it does for anyone, and inheritance and search need no changes. While the farm switch is
+  on, `principalIds` adds it for everyone.
+- **Being allowed in is separate from having rights.** `AnonymousVisitorFilter` accepts only GET and HEAD on a fixed list
+  of addresses. A permission can never widen that list, so new endpoints need a real account unless added to it.
+- **The account stays at Read.** `grant` and `addMember` both refuse anything that would raise it.
+- **The visitor is not saved to a session**, so turning the switch off takes effect on the next request.
+- **Refusals depend on the site alone.** `ContentService.refused` looks at the sites in an address and never at the item,
+  so the answer cannot be used to test whether a file exists. WebDAV keeps its plain 404.
+- **Trimming happens on the server, per reader.** `LinkTrimmer` runs on the way out, and `?edit=true` returns the full
+  design to those who can change it, so an owner's edit cannot drop links they cannot open.
+
 ## Databases
 
 Flyway migrations live per vendor (`db/migration/postgresql`, `db/migration/h2`). PostgreSQL uses

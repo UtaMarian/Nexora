@@ -31,9 +31,11 @@ public class PageController {
     private final io.nexora.portal.HubService hubs;
     private final EmbedPolicy embeds;
     private final io.nexora.audit.AuditService audit;
+    private final io.nexora.portal.LinkTrimmer links;
 
     public PageController(PageService pages, IdentityService identity, NodeMapper mapper, io.nexora.portal.HubService hubs,
-                          EmbedPolicy embeds, io.nexora.audit.AuditService audit) {
+                          EmbedPolicy embeds, io.nexora.audit.AuditService audit, io.nexora.portal.LinkTrimmer links) {
+        this.links = links;
         this.hubs = hubs;
         this.embeds = embeds;
         this.audit = audit;
@@ -203,8 +205,36 @@ public class PageController {
     private PageDetail detail(CurrentUser user, SitePage p) {
         Node site = pages.site(user, p.getSiteId());
         boolean canEdit = pages.can(user, site, Right.EDIT_ITEMS);
-        return new PageDetail(summaries(site, List.of(p)).get(0), pages.published(p), canEdit ? pages.draft(p) : null,
+        PageService.Content published = pages.published(p);
+        if (published != null && !canEdit) published = forReader(user, published);
+        return new PageDetail(summaries(site, List.of(p)).get(0), published, canEdit ? pages.draft(p) : null,
                 p.getRevision(), canEdit, pages.can(user, site, Right.DELETE_ITEMS), pages.can(user, site, Right.MANAGE_WEB));
+    }
+
+    /** Editors see everything, or saving would quietly drop the links they cannot open. */
+    private PageService.Content forReader(CurrentUser user, PageService.Content c) {
+        io.nexora.portal.LinkTrimmer.Reader reader = links.reader(user);
+        List<Canvas.Section> sections = new ArrayList<>();
+        for (Canvas.Section s : c.canvas().sections()) {
+            List<List<Canvas.WebPart>> columns = new ArrayList<>();
+            for (List<Canvas.WebPart> column : s.columns()) {
+                List<Canvas.WebPart> parts = new ArrayList<>();
+                for (Canvas.WebPart w : column) parts.add(forReader(reader, user, w));
+                columns.add(parts);
+            }
+            sections.add(new Canvas.Section(s.layout(), s.background(), columns));
+        }
+        return new PageService.Content(c.title(), c.description(), c.bannerImageId(), new Canvas(sections));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Canvas.WebPart forReader(io.nexora.portal.LinkTrimmer.Reader reader, CurrentUser user, Canvas.WebPart w) {
+        Map<String, Object> props = new HashMap<>(w.props());
+        if ("quicklinks".equals(w.type()) && props.get("links") instanceof List<?> all) {
+            props.put("links", all.stream().filter(l -> l instanceof Map<?, ?> m && reader.canFollow(String.valueOf(m.get("url")))).toList());
+        }
+        if (user.anonymous()) props = (Map<String, Object>) io.nexora.identity.AnonymousAccess.withoutLogins(props);
+        return new Canvas.WebPart(w.id(), w.type(), props);
     }
 
     private List<PageSummary> summaries(Node site, List<SitePage> list) {

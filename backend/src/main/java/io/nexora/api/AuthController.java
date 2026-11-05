@@ -72,7 +72,7 @@ public class AuthController {
     public Me me() {
         CurrentUser user = CurrentUser.get();
         Principal p = identity.get(user.id());
-        return new Me(p.getId(), p.getLogin(), p.getDisplayName(), p.getEmail(), p.isAdmin(), search.enabled());
+        return new Me(p.getId(), user.anonymous() ? null : p.getLogin(), p.getDisplayName(), p.getEmail(), p.isAdmin(), search.enabled(), user.anonymous());
     }
 
     public record SsoOption(String id, String label, String url) {}

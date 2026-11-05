@@ -26,6 +26,8 @@ export interface Me {
   email?: string;
   admin: boolean;
   searchEnabled: boolean;
+  /** reading without signing in */
+  anonymous: boolean;
 }
 
 export interface NodeDto {
@@ -106,6 +108,15 @@ export interface AclEntry {
   level: PermissionLevel;
 }
 
+export interface AnonymousStatus {
+  /** the farm allows it */
+  available: boolean;
+  enabled: boolean;
+  /** it comes from sourcePath, and is changed there */
+  inherited: boolean;
+  sourcePath: string;
+}
+
 export interface Permissions {
   inheritsPermissions: boolean;
   sourceId: string;
@@ -154,10 +165,11 @@ export interface LinkGroup {
   links: Link[];
 }
 
+/** Someone who cannot open the hub gets only its theme. */
 export interface Hub {
-  id: string;
-  title: string;
-  path: string;
+  id?: string;
+  title?: string;
+  path?: string;
   navigation: Link[];
   theme?: string;
 }

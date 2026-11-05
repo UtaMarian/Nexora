@@ -154,7 +154,7 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
         <Crumbs items={breadcrumbs} />
         {isLibrary && container.description && <Text className={s.muted}>{container.description}</Text>}
         <Toolbar aria-label={`${title} commands`} style={{ paddingLeft: 0, flexWrap: "wrap" }}>
-          <Menu>
+          {!me.anonymous && <Menu>
             <MenuTrigger disableButtonEnhancement>
               <ToolbarButton icon={<AddRegular />} disabled={!canAdd}>New</ToolbarButton>
             </MenuTrigger>
@@ -176,24 +176,30 @@ export function LibraryView({ container, breadcrumbs }: { container: NodeDto; br
                 )}
               </MenuList>
             </MenuPopover>
-          </Menu>
-          <ToolbarButton
-            icon={<ArrowUploadRegular />}
-            disabled={!canAdd}
-            appearance="primary"
-            onClick={() => fileInput.current?.click()}
-          >
-            Upload
-          </ToolbarButton>
+          </Menu>}
+          {!me.anonymous && (
+            <ToolbarButton
+              icon={<ArrowUploadRegular />}
+              disabled={!canAdd}
+              appearance="primary"
+              onClick={() => fileInput.current?.click()}
+            >
+              Upload
+            </ToolbarButton>
+          )}
           {can(container, "MANAGE_PERMISSIONS") && (
             <ToolbarButton icon={<PeopleRegular />} onClick={() => setDialog("permissions")}>
               Manage access
             </ToolbarButton>
           )}
-          <ToolbarButton icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</ToolbarButton>
-          <ToolbarButton icon={<HardDriveRegular />} onClick={() => setDialog("drive")}>
-            Map network drive
-          </ToolbarButton>
+          {!me.anonymous && (
+            <>
+              <ToolbarButton icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</ToolbarButton>
+              <ToolbarButton icon={<HardDriveRegular />} onClick={() => setDialog("drive")}>
+                Map network drive
+              </ToolbarButton>
+            </>
+          )}
           {isLibrary && can(container, "MANAGE_LISTS") && (
             <ToolbarButton icon={<FlashRegular />} onClick={() => setDialog("rules")}>Automate</ToolbarButton>
           )}

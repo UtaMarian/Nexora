@@ -120,12 +120,12 @@ export function ItemActions(props: {
           <MenuList>
             {isFile ? (
               <>
-                {office.canOpen(node.name) && (
+                {office.canOpen(node.name) && !me.anonymous && (
                   <MenuItem icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(node.id))}>
                     {office.canEdit(node.name) && canEdit ? "Open in browser" : "View in browser"}
                   </MenuItem>
                 )}
-                {desktop && (
+                {desktop && !me.anonymous && (
                   <MenuItem icon={<DesktopRegular />} onClick={() => (window.location.href = desktop.href)}>
                     Open in {desktop.app}
                   </MenuItem>
@@ -146,7 +146,7 @@ export function ItemActions(props: {
               </MenuItem>
             )}
             {can(node, "EDIT_ITEMS") && <MenuItem icon={<ShareRegular />} onClick={() => setDialog("share")}>Share</MenuItem>}
-            <MenuItem icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</MenuItem>
+            {!me.anonymous && <MenuItem icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</MenuItem>}
             {isFile && can(node, "EDIT_ITEMS") && (
               <>
                 <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => setDialog("approval")}>Request approval</MenuItem>

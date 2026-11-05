@@ -8,6 +8,7 @@ import { api, contentUrl, routeFor } from "../api/client";
 import type { Crumb, LibrarySettings, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
 import { FileIcon } from "../components/FileIcon";
+import { useMe } from "../components/me";
 import { ItemActions } from "../components/ItemActions";
 import { valueText } from "../components/columns";
 import { formatDate, formatSize } from "../components/format";
@@ -30,11 +31,12 @@ export function FileView({ file, breadcrumbs }: { file: NodeDto; breadcrumbs: Cr
   });
   const parent = breadcrumbs[breadcrumbs.length - 2];
   const office = useOffice();
+  const me = useMe();
 
   // puts the file in "Recent"
   useEffect(() => {
-    void api(`/api/v1/nodes/${file.id}/viewed`, { method: "POST" }).catch(() => undefined);
-  }, [file.id]);
+    if (!me.anonymous) void api(`/api/v1/nodes/${file.id}/viewed`, { method: "POST" }).catch(() => undefined);
+  }, [file.id, me.anonymous]);
 
   return (
     <>
@@ -76,13 +78,13 @@ export function FileView({ file, breadcrumbs }: { file: NodeDto; breadcrumbs: Cr
           ))}
         </div>
         <div className={s.row}>
-          {office.canOpen(file.name) && (
+          {office.canOpen(file.name) && !me.anonymous && (
             <Button appearance="primary" icon={<DocumentEditRegular />} onClick={() => navigate(officeRoute(file.id))}>
               Open in browser
             </Button>
           )}
           <Button
-            appearance={office.canOpen(file.name) ? "secondary" : "primary"}
+            appearance={office.canOpen(file.name) && !me.anonymous ? "secondary" : "primary"}
             icon={<OpenRegular />}
             as="a"
             href={contentUrl(file.id)}

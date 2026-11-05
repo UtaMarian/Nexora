@@ -75,6 +75,9 @@ public class IdentityService {
         Principal group = requireGroup(groupId);
         requireCanManage(user, group);
         Principal member = get(memberId);
+        if (AnonymousAccess.LOGIN.equals(member.getLogin())) {
+            throw ApiException.badRequest("anonymous_read_only", "Anonymous visitors can only read, so they cannot join a group");
+        }
         if (member.getId().equals(group.getId()) || createsCycle(group.getId(), member.getId())) {
             throw ApiException.badRequest("group_cycle", "A group cannot contain itself");
         }

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Route, Routes } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Spinner } from "@fluentui/react-components";
-import { api, ApiError, primeCsrf } from "./api/client";
+import { api, ApiError, primeCsrf, setVisitor } from "./api/client";
 import type { Me } from "./api/types";
 import { AppShell } from "./components/AppShell";
 import { MeContext } from "./components/me";
@@ -41,12 +41,14 @@ export function App() {
       return api<Me>("/api/v1/auth/me");
     },
     retry: false,
+    refetchOnWindowFocus: false,   // or coming back to the sign-in page would return a visitor to where they left
   });
+  setVisitor(!!me.data?.anonymous);
 
   // after single sign-on, return to the page the user originally asked for
   const navigate = useNavigate();
   useEffect(() => {
-    if (!me.data) return;
+    if (!me.data || me.data.anonymous) return;
     let target: string | null = null;
     try {
       target = sessionStorage.getItem(RETURN_KEY);
@@ -74,7 +76,14 @@ export function App() {
   }
   const unauthenticated = !me.data || (me.error instanceof ApiError && me.error.status === 401);
   if (unauthenticated) {
-    return <LoginPage onSignedIn={(user) => qc.setQueryData(["me"], user)} />;
+    return (
+      <LoginPage
+        onSignedIn={(user) => {
+          qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "me" });   // what a visitor was shown is not what this person sees
+          qc.setQueryData(["me"], user);
+        }}
+      />
+    );
   }
 
   return (

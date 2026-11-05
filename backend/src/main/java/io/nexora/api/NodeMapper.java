@@ -36,6 +36,11 @@ public class NodeMapper {
     }
 
     @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> metadataForVisitor(Node n) {
+        return n.getMetadata() == null ? null : (Map<String, Object>) io.nexora.identity.AnonymousAccess.withoutLogins(n.getMetadata());
+    }
+
     public PrincipalRef ref(UUID id) {
         return id == null ? null : PrincipalRef.of(identity.get(id));
     }
@@ -84,7 +89,7 @@ public class NodeMapper {
                     locks.containsKey(n.getId()) ? locks.get(n.getId()).getExpiresAt() : null,
                     PrincipalRef.of(people.get(n.getCreatedBy())), n.getCreatedAt(),
                     PrincipalRef.of(people.get(n.getModifiedBy())), n.getModifiedAt(),
-                    n.getMetadata(), n.isInheritsPermissions(),
+                    user.anonymous() ? metadataForVisitor(n) : n.getMetadata(), n.isInheritsPermissions(),
                     level, level == null ? Set.of() : level.rights(),
                     latest.containsKey(n.getId()) ? latest.get(n.getId()).getKind() + ":" + latest.get(n.getId()).getStatus() : null));
         }

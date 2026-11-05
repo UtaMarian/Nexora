@@ -52,7 +52,12 @@ type TabId = "theme" | "header" | "navigation" | "home" | "hub";
 export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: () => void }) {
   const s = useStyles();
   const qc = useQueryClient();
-  const current = useQuery({ queryKey: ["design", site.id], queryFn: () => api<DesignResponse>(`/api/v1/sites/${site.id}/design`) });
+  // everything, including links this owner cannot open: what the header shows is trimmed for each reader
+  const current = useQuery({
+    queryKey: ["design", site.id, "edit"],
+    queryFn: () => api<DesignResponse>(`/api/v1/sites/${site.id}/design?edit=true`),
+    gcTime: 0,
+  });
   const libraries = useQuery({ queryKey: ["libraries", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/libraries`) });
   const lists = useQuery({ queryKey: ["lists", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/lists`) });
   const hubs = useQuery({ queryKey: ["hubs"], queryFn: () => api<Hub[]>("/api/v1/hubs") });
@@ -72,7 +77,7 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
       setLogoUrl(current.data.logoUrl);
       setJoined(current.data.joinedHubId ?? "");
       if (current.data.isHub && current.data.hub) {
-        setHubDraft({ title: current.data.hub.title, navigation: structuredClone(current.data.hub.navigation) });
+        setHubDraft({ title: current.data.hub.title ?? "", navigation: structuredClone(current.data.hub.navigation) });
       }
     }
   }, [current.data, draft]);
@@ -241,7 +246,7 @@ export function ChangeLookDialog({ site, onClose }: { site: NodeDto; onClose: ()
                       onOptionSelect={(_, d) => setJoined(d.optionValue ?? "")}
                     >
                       <Option value="" text="None">None</Option>
-                      {(hubs.data ?? []).map((h) => <Option key={h.id} value={h.id} text={h.title}>{h.title}</Option>)}
+                      {(hubs.data ?? []).map((h) => <Option key={h.id} value={h.id} text={h.title ?? ""}>{h.title}</Option>)}
                     </Dropdown>
                   </Field>
                 </>

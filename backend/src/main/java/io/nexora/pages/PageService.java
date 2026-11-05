@@ -115,7 +115,7 @@ public class PageService {
     public SitePage resolve(CurrentUser user, String path) {
         Matcher m = PAGE_PATH.matcher(path == null ? "" : path);
         if (!m.matches()) throw ApiException.notFound("Page");
-        Node site = content.resolveDecoded(user, m.group(1));
+        Node site = content.resolveAddress(user, m.group(1));
         if (site.getKind() != Node.Kind.SITE) throw ApiException.notFound("Page");
         SitePage page = pages.findBySiteIdAndName(site.getId(), m.group(2).toLowerCase(Locale.ROOT))
                 .orElseThrow(() -> ApiException.notFound("Page"));

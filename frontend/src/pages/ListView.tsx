@@ -41,7 +41,7 @@ import {
 import { api, routeFor } from "../api/client";
 import type { ColumnDto, Crumb, ListView as SavedView, NodeDto } from "../api/types";
 import { Crumbs } from "../components/Crumbs";
-import { can } from "../components/me";
+import { can, useMe } from "../components/me";
 import { ColumnValue, valueText } from "../components/columns";
 import { AlertDialog } from "../dialogs/AlertDialog";
 import { RulesDialog } from "../workflow/RulesDialog";
@@ -70,6 +70,7 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
   const { list, breadcrumbs } = props;
   const s = useStyles();
   const qc = useQueryClient();
+  const me = useMe();
   const navigate = useNavigate();
   const items = useQuery({ queryKey: ["children", list.id], queryFn: () => api<NodeDto[]>(`/api/v1/nodes/${list.id}/children`) });
   const columns = useQuery({ queryKey: ["columns", list.id], queryFn: () => api<ColumnDto[]>(`/api/v1/nodes/${list.id}/columns`) });
@@ -142,10 +143,14 @@ export function ListView(props: { list: NodeDto; breadcrumbs: Crumb[]; openItemI
         {list.description && <Text className={s.muted}>{list.description}</Text>}
         <div className={s.bar}>
           <Toolbar aria-label={`${list.title} commands`} style={{ paddingLeft: 0, flexWrap: "wrap" }}>
-            <ToolbarButton appearance="primary" icon={<AddRegular />} disabled={!can(list, "ADD_ITEMS")} onClick={() => setDialog("new")}>
-              New item
-            </ToolbarButton>
-            <ToolbarButton icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</ToolbarButton>
+            {!me.anonymous && (
+              <>
+                <ToolbarButton appearance="primary" icon={<AddRegular />} disabled={!can(list, "ADD_ITEMS")} onClick={() => setDialog("new")}>
+                  New item
+                </ToolbarButton>
+                <ToolbarButton icon={<AlertRegular />} onClick={() => setDialog("alert")}>Alert me</ToolbarButton>
+              </>
+            )}
             {can(list, "MANAGE_PERMISSIONS") && (
               <ToolbarButton icon={<PeopleRegular />} onClick={() => setDialog("permissions")}>
                 Manage access

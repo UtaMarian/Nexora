@@ -56,4 +56,8 @@ The main site is a hub. Try the **Departments** menu in the dark bar, then **Wor
 - `/sites/kestrelwind-foundation` is a separate site that joined the hub, so its news appears on the Kestrelwind home page.
 - **About us** has a People web part and an embedded map. The map needs internet access.
 
+The seed turns on the farm switch for anonymous access and opens `/sites/kestrelwind-foundation`. Open it in a private
+window to read it without signing in. There is no hub bar, because visitors cannot open the hub. Turn the switch off under
+**Central Administration > Sharing and email** if your stack is reachable by other people.
+
 `--replace` deletes `/sites/kestrelwind`, with its subsites, and `/sites/kestrelwind-foundation`. It touches no other site.

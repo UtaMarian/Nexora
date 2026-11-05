@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +23,7 @@ import { AddRegular, GlobeRegular } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
 import type { NodeDto, Templates } from "../api/types";
 import { Empty, ErrorBar, Loading } from "../components/States";
+import { useMe } from "../components/me";
 import { formatRelative } from "../components/format";
 
 const useStyles = makeStyles({
@@ -55,16 +56,23 @@ export function HomePage() {
   const s = useStyles();
   const sites = useQuery({ queryKey: ["sites"], queryFn: () => api<NodeDto[]>("/api/v1/sites") });
   const [creating, setCreating] = useState(false);
+  const me = useMe();
+  const nothingPublic = me.anonymous && sites.isSuccess && !sites.data.length;
+  useEffect(() => {
+    if (nothingPublic) window.dispatchEvent(new Event("nexora:unauthorized"));
+  }, [nothingPublic]);
 
   return (
     <>
       <div className={s.head}>
         <Text as="h1" size={700} weight="semibold">
-          Your sites
+          {me.anonymous ? "Public sites" : "Your sites"}
         </Text>
-        <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
-          Create site
-        </Button>
+        {!me.anonymous && (
+          <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
+            Create site
+          </Button>
+        )}
       </div>
       <ErrorBar error={sites.error} />
       {sites.isPending ? (
@@ -92,8 +100,8 @@ export function HomePage() {
           ))}
         </div>
       ) : (
-        <Empty title="No sites yet">
-          <Text>Create a site to start sharing documents with your team.</Text>
+        <Empty title="No sites have been shared with you yet">
+          <Text>Ask a site's owner for access, or create a site to start sharing documents with your team.</Text>
         </Empty>
       )}
       {creating && <NewSiteDialog onClose={() => setCreating(false)} />}

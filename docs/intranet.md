@@ -37,8 +37,8 @@ A site's own theme comes back if it leaves the hub. A hub cannot join another hu
 follow the hub of their parent.
 
 Joining a hub shares navigation, a theme and news. It does not change permissions. A News web part set to **All sites
-in the hub** shows only what the person reading it can open. The hub's name and links are visible to everyone in its
-sites, even people who cannot open the hub site.
+in the hub** shows only what the person reading it can open. Someone who cannot open the hub site does not see its name
+or navigation, and their menus leave out what they cannot open. See [anonymous-access.md](anonymous-access.md#links-people-cannot-open).
 
 ## Mega menus
 
@@ -48,8 +48,7 @@ to 6 columns, each with a heading and up to 12 links. Its top link does not need
 The menu works with the keyboard. Enter opens it and moves to the first link, Tab moves through the links, and Escape
 closes it and returns to the menu's button. On a phone the columns stack.
 
-Links are not filtered by permission: someone who follows a link to a site they cannot open sees the not-found page.
-Keep this in mind when you link to private sites.
+Each person sees only the links they can open, and a menu with nothing left disappears.
 
 ## New web parts
 
@@ -97,6 +96,6 @@ under a new name moves everything to the new address, except that:
 
 - Migration from SharePoint does not copy subsites. Create one migration task for each. See
   [administration.md](administration.md).
-- Audience targeting, which would hide links from people who cannot use them.
+- Audience targeting, which would show links to chosen groups regardless of access.
 - Moving a subsite or a site into a different parent.
 - More than one level of hub.

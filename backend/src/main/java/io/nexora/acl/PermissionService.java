@@ -3,6 +3,7 @@ package io.nexora.acl;
 import io.nexora.common.ApiException;
 import io.nexora.content.Node;
 import io.nexora.content.NodeRepository;
+import io.nexora.identity.AnonymousAccess;
 import io.nexora.identity.CurrentUser;
 import io.nexora.identity.GroupMember;
 import io.nexora.identity.GroupMemberRepository;
@@ -24,8 +25,10 @@ public class PermissionService {
     private final NodeRepository nodes;
     private final AclEntryRepository acl;
     private final GroupMemberRepository members;
+    private final AnonymousAccess anonymous;
 
-    public PermissionService(NodeRepository nodes, AclEntryRepository acl, GroupMemberRepository members) {
+    public PermissionService(NodeRepository nodes, AclEntryRepository acl, GroupMemberRepository members, AnonymousAccess anonymous) {
+        this.anonymous = anonymous;
         this.nodes = nodes;
         this.acl = acl;
         this.members = members;
@@ -35,6 +38,7 @@ public class PermissionService {
     public Set<UUID> principalIds(CurrentUser user) {
         Set<UUID> result = new HashSet<>();
         result.add(user.id());
+        if (anonymous.enabled()) result.add(anonymous.id());   // what anyone can read, everyone can read
         Set<UUID> frontier = Set.of(user.id());
         while (!frontier.isEmpty()) {
             Set<UUID> next = new HashSet<>();
@@ -150,6 +154,9 @@ public class PermissionService {
 
     @Transactional
     public void grant(Node node, UUID principalId, PermissionLevel level) {
+        if (principalId.equals(anonymous.id()) && level != PermissionLevel.READ) {
+            throw ApiException.badRequest("anonymous_read_only", "Anonymous visitors can only read");
+        }
         if (node.isInheritsPermissions()) {
             throw ApiException.conflict("inherits_permissions",
                     "This item inherits permissions. Stop inheriting before granting access directly.");

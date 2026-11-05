@@ -262,8 +262,8 @@ function PeoplePart({ part }: { part: WebPart }) {
     <section className={s.part} aria-label={title || "People"}>
       {title && <PartHead title={title} />}
       <div className={s.people}>
-        {people.map((p) => (
-          <Persona key={p.login} name={p.displayName || p.login} secondaryText={p.role} avatar={{ color: "colorful" }} size="large" />
+        {people.map((p, i) => (
+          <Persona key={i} name={p.displayName || p.login} secondaryText={p.role} avatar={{ color: "colorful" }} size="large" />
         ))}
       </div>
     </section>
@@ -548,7 +548,7 @@ type SettingsProps = { part: WebPart; siteId: string; onChange: (props: Record<s
 /** Only offered in a site that belongs to a hub. */
 function NewsScope(p: { siteId: string; value: string; onChange: (scope: string) => void }) {
   const design = useQuery({ queryKey: ["design", p.siteId], queryFn: () => api<DesignResponse>(`/api/v1/sites/${p.siteId}/design`) });
-  if (!design.data?.hub) return null;
+  if (!design.data?.hub?.id) return null;
   return (
     <Field label="News from">
       <Dropdown value={p.value === "hub" ? "All sites in the hub" : "This site"} selectedOptions={[p.value]}

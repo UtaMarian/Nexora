@@ -392,6 +392,10 @@ def main():
     print("site", ROOT)
 
 
+def admin_library(site):
+    return next(l["id"] for l in admin.get(f"/sites/{site}/libraries") if l["name"] == "Shared Documents")
+
+
 def intranet(site, page):
     """A hub, subsites inside the main site, and a separate site that joins the hub."""
     ops_url, north_url = f"{ROOT}/operations", f"{ROOT}/operations/north-sea"
@@ -449,6 +453,10 @@ def intranet(site, page):
         if login != ANA:
             who[ANA].post(f"/principals/{groups['visitors']}/members", {"principalId": ids[login]})
     who[ANA].put(f"/sites/{foundation}/hub-association", {"hubId": site})
+    # the one public site: visitors read it without signing in, and see no hub bar, as they cannot open the hub
+    admin.put("/admin/anonymous", {"enabled": True})
+    who[ANA].put(f"/nodes/{foundation}/anonymous", {"enabled": True})
+    who[ANA].upload(admin_library(foundation), FILES / "policies" / "Code of Conduct.docx", name="Grants code of conduct.docx")
     with open(IMAGES / "news-team.jpg", "rb") as f:
         banner = who[ANA].call("POST", f"/sites/{foundation}/page-images", files={"file": ("solar-classroom.jpg", f, "image/jpeg")})["id"]   # pictures belong to one site
     publish(ANA, foundation, "Highmoor school opens its solar classroom", "NEWS", "Funded by the Foundation, built by the village.", banner,

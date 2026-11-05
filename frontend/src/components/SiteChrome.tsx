@@ -99,9 +99,9 @@ export function SiteChrome({ siteId, children }: { siteId: string; children: Rea
 
   return (
     <FluentProvider theme={theme} className={s.provider}>
-      {hub && (
+      {hub?.id && (
         <div className={s.hubBar}>
-          <Link to={routeFor(hub.path)} className={s.hubTitle}>{hub.title}</Link>
+          <Link to={routeFor(hub.path!)} className={s.hubTitle}>{hub.title}</Link>
           <nav className={s.hubNav} aria-label={`${hub.title} hub navigation`}>
             <NavItems links={hub.navigation} linkClass={s.navLink} />
           </nav>

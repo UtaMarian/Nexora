@@ -33,9 +33,14 @@ public class PortalController {
     private final io.nexora.pages.PageService pages;
     private final HubService hubs;
     private final io.nexora.content.NodeRepository nodes;
+    private final LinkTrimmer links;
+    private final io.nexora.acl.PermissionService permissions;
 
     public PortalController(PortalService portal, ContentService content, NodeMapper mapper,
-                            io.nexora.pages.PageService pages, HubService hubs, io.nexora.content.NodeRepository nodes) {
+                            io.nexora.pages.PageService pages, HubService hubs, io.nexora.content.NodeRepository nodes,
+                            LinkTrimmer links, io.nexora.acl.PermissionService permissions) {
+        this.links = links;
+        this.permissions = permissions;
         this.hubs = hubs;
         this.nodes = nodes;
         this.pages = pages;
@@ -76,9 +81,12 @@ public class PortalController {
     // ---- design ----
 
     @GetMapping("/sites/{id}/design")
-    public DesignDto design(@PathVariable UUID id) {
+    public DesignDto design(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean edit) {
         CurrentUser user = CurrentUser.get();
-        return dto(user, id, portal.design(user, id));
+        if (!edit) return dto(user, id, links.trim(user, portal.design(user, id)), false);
+        // owners edit everything, or saving would quietly delete the links they cannot open
+        permissions.require(user, content.get(user, id), io.nexora.acl.Right.MANAGE_WEB);
+        return dto(user, id, portal.design(user, id), true);
     }
 
     @PutMapping("/sites/{id}/design")
@@ -140,13 +148,25 @@ public class PortalController {
     }
 
     private DesignDto dto(CurrentUser user, UUID siteId, SiteDesign design) {
+        return dto(user, siteId, design, true);
+    }
+
+    private DesignDto dto(CurrentUser user, UUID siteId, SiteDesign design, boolean full) {
         Node site = content.get(user, siteId);
         String logo = portal.logoVersion(site).map(v -> "/api/v1/sites/" + siteId + "/logo?v=" + v).orElse(null);
         SiteRef parent = site.getParentId() == null ? null : nodes.findLive(site.getParentId())
+                .filter(p -> permissions.has(user, p, io.nexora.acl.Right.VIEW))
                 .map(p -> new SiteRef(p.getId(), p.getTitle(), p.getPath())).orElse(null);
-        UUID joined = HubService.joinedHubPath(site).flatMap(nodes::findLiveByPath).map(Node::getId).orElse(null);
+        UUID joined = full ? HubService.joinedHubPath(site).flatMap(nodes::findLiveByPath).map(Node::getId).orElse(null) : null;
         return new DesignDto(design, logo, portal.template(site).orElse(null), pages.homePageId(site).orElse(null), parent,
-                hubs.hubOf(site).orElse(null), HubService.isHub(site), joined);
+                hubs.hubOf(site).map(h -> full ? h : forReader(user, h)).orElse(null), HubService.isHub(site), joined);
+    }
+
+    /** Someone who cannot open the hub gets its look and nothing that names it. */
+    private HubService.Hub forReader(CurrentUser user, HubService.Hub hub) {
+        boolean visible = nodes.findLive(hub.id()).filter(n -> permissions.has(user, n, io.nexora.acl.Right.VIEW)).isPresent();
+        return visible ? new HubService.Hub(hub.id(), hub.title(), hub.path(), links.reader(user).trim(hub.navigation()), hub.theme())
+                : new HubService.Hub(null, null, null, List.of(), hub.theme());
     }
 
     // ---- subsites ----

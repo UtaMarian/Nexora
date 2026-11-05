@@ -68,13 +68,16 @@ public class SiteTransferService {
     private final ApprovalStepRepository approvalSteps;
     private final WorkflowRuleRepository rules;
     private final ObjectMapper json;
+    private final io.nexora.identity.AnonymousAccess anonymous;
 
     public SiteTransferService(NodeRepository nodes, FileVersionRepository versions, ColumnDefRepository columns,
                                AclEntryRepository acl, PrincipalRepository principals, GroupMemberRepository members,
                                SitePageRepository pages, SitePageVersionRepository pageVersions,
                                SiteAssetRepository assets, ContentService content, BlobStore store,
                                AuditService audit, ItemVersionRepository itemVersions, ApprovalRepository approvals,
-                               ApprovalStepRepository approvalSteps, WorkflowRuleRepository rules, ObjectMapper json) {
+                               ApprovalStepRepository approvalSteps, WorkflowRuleRepository rules, ObjectMapper json,
+                               io.nexora.identity.AnonymousAccess anonymous) {
+        this.anonymous = anonymous;
         this.approvals = approvals;
         this.approvalSteps = approvalSteps;
         this.rules = rules;
@@ -190,6 +193,7 @@ public class SiteTransferService {
         }
         List<SitePackage.AclRec> aclRecs = new ArrayList<>();
         for (AclEntry e : entries) {
+            if (e.getPrincipalId().equals(anonymous.id())) continue;   // a restored site starts private
             SitePackage.PrincipalRef p = ref.apply(e.getPrincipalId());
             if (p != null) aclRecs.add(new SitePackage.AclRec(e.getNodeId(), p, e.getLevel().name()));
         }

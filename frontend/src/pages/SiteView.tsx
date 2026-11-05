@@ -34,7 +34,7 @@ import {
 } from "@fluentui/react-icons";
 import { api, routeFor } from "../api/client";
 import type { ColumnDto, DesignResponse, NodeDto, PageDetail, PageKind, PageSummary } from "../api/types";
-import { can } from "../components/me";
+import { can, useMe } from "../components/me";
 import { ErrorBar, Loading } from "../components/States";
 import { formatDate, formatRelative } from "../components/format";
 import { ChangeLookDialog } from "../dialogs/ChangeLookDialog";
@@ -86,6 +86,7 @@ export function SiteView({ site }: { site: NodeDto }) {
   const libraries = useQuery({ queryKey: ["libraries", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/libraries`) });
   const lists = useQuery({ queryKey: ["lists", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/lists`) });
   const [dialog, setDialog] = useState<DialogKind>(null);
+  const me = useMe();
   const subsites = useQuery({ queryKey: ["subsites", site.id], queryFn: () => api<NodeDto[]>(`/api/v1/sites/${site.id}/subsites`) });
   const homePageId = design.data?.homePageId;
   const homePage = useQuery({
@@ -130,16 +131,18 @@ export function SiteView({ site }: { site: NodeDto }) {
         <Link to={routeFor(site.path + "/SitePages")}>
           <ToolbarButton icon={<DocumentOnePageRegular />}>Pages</ToolbarButton>
         </Link>
-        <ToolbarButton icon={<PeopleTeamRegular />} onClick={() => setDialog("members")}>Members</ToolbarButton>
+        {!me.anonymous && <ToolbarButton icon={<PeopleTeamRegular />} onClick={() => setDialog("members")}>Members</ToolbarButton>}
         {can(site, "MANAGE_PERMISSIONS") && (
           <ToolbarButton icon={<PeopleRegular />} onClick={() => setDialog("permissions")}>Site permissions</ToolbarButton>
         )}
         {can(site, "MANAGE_WEB") && (
           <ToolbarButton icon={<PaintBrushRegular />} onClick={() => setDialog("look")}>Change the look</ToolbarButton>
         )}
-        <Link to={`/recycle-bin?siteId=${site.id}`}>
-          <ToolbarButton icon={<DeleteRegular />}>Recycle bin</ToolbarButton>
-        </Link>
+        {!me.anonymous && (
+          <Link to={`/recycle-bin?siteId=${site.id}`}>
+            <ToolbarButton icon={<DeleteRegular />}>Recycle bin</ToolbarButton>
+          </Link>
+        )}
         {can(site, "MANAGE_WEB") && (
           <Link to={`/audit?siteId=${site.id}`}>
             <ToolbarButton icon={<HistoryRegular />}>Audit log</ToolbarButton>

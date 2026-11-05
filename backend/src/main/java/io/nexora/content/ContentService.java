@@ -85,11 +85,31 @@ public class ContentService {
     public Node resolve(CurrentUser user, String path) {
         // Try the path as given first (names may contain '%'), then URL-decoded (old SharePoint links).
         String raw = cleanPath(path);
-        Node node = nodes.findLiveByPath(raw)
-                .or(() -> nodes.findLiveByPath(normalizePath(path)))
-                .orElseThrow(() -> ApiException.notFound("Item"));
-        permissions.require(user, node, Right.VIEW);
-        return node;
+        Optional<Node> node = nodes.findLiveByPath(raw).or(() -> nodes.findLiveByPath(normalizePath(path)));
+        if (node.isPresent() && permissions.has(user, node.get(), Right.VIEW)) return node.get();
+        throw refused(user, node.map(Node::getPath).orElse(normalizePath(path)));
+    }
+
+    /**
+     * For an address typed into the browser. The answer depends only on the site in the address, never on what is
+     * below it, so asking about a file says nothing about whether the file exists.
+     */
+    @Transactional(readOnly = true)
+    public Node resolveAddress(CurrentUser user, String decodedPath) {
+        Optional<Node> node = nodes.findLiveByPath(decodedPath);
+        if (node.isPresent() && permissions.has(user, node.get(), Right.VIEW)) return node.get();
+        throw refused(user, decodedPath);
+    }
+
+    private ApiException refused(CurrentUser user, String path) {
+        if (user.anonymous()) return new ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED, "sign_in_required", "Sign in to see this");
+        for (String p = path; p != null && p.startsWith("/sites/"); p = p.substring(0, p.lastIndexOf('/'))) {
+            Optional<Node> found = nodes.findLiveByPath(p).filter(n -> n.getKind() == Node.Kind.SITE);
+            if (found.isEmpty()) continue;
+            if (permissions.has(user, found.get(), Right.VIEW)) break;
+            return new ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "site_not_shared", "This site wasn't shared with you");
+        }
+        return ApiException.notFound("Item");
     }
 
     /** Like {@link #resolve} for a path that is already percent-decoded (e.g. a servlet path). */

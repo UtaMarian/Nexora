@@ -22,6 +22,7 @@ export function SharingAdminPage() {
   const qc = useQueryClient();
   const me = useMe();
   const policy = useQuery({ queryKey: ["admin", "sharing"], queryFn: () => api<SharingPolicy>("/api/v1/admin/sharing"), refetchInterval: 10000 });
+  const anonymous = useQuery({ queryKey: ["admin", "anonymous"], queryFn: () => api<{ enabled: boolean }>("/api/v1/admin/anonymous") });
   const [error, setError] = useState<unknown>(null);
   const [to, setTo] = useState(me.email ?? "");
   const [sent, setSent] = useState(false);
@@ -51,6 +52,20 @@ export function SharingAdminPage() {
           />
           <Text block size={200} className={s.muted}>
             Turning this off stops existing links of this kind at once. Links for people in the organization keep working. A link can last at most {d.maxLinkDays} days.
+          </Text>
+
+          <Text as="h2" size={500} weight="semibold" className={s.section}>Anonymous access</Text>
+          <Switch
+            label="Allow site owners to open sites, libraries and lists to people who are not signed in"
+            checked={!!anonymous.data?.enabled}
+            disabled={!anonymous.data}
+            onChange={(_, v) => run(async () => {
+              await api("/api/v1/admin/anonymous", { method: "PUT", body: { enabled: v.checked } });
+              await qc.invalidateQueries({ queryKey: ["admin", "anonymous"] });
+            })}
+          />
+          <Text block size={200} className={s.muted}>
+            Visitors can only read. Turning this off closes every open site at once, and owners' choices come back if you turn it on again.
           </Text>
 
           <Text as="h2" size={500} weight="semibold" className={s.section}>Active links</Text>

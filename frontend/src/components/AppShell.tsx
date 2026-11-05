@@ -3,6 +3,7 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Avatar,
+  Button,
   CounterBadge,
   Input,
   Menu,
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const waiting = useQuery({
     queryKey: ["approvals", "count"], refetchInterval: 30000,
     queryFn: () => api<{ waiting: number }>("/api/v1/me/approvals/count"),
+    enabled: !me.anonymous,
   });
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -108,15 +110,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             <HomeRegular />
             <span>Sites</span>
           </NavLink>
-          <NavLink to="/approvals" className={s.navLink} title="Approvals">
-            <CheckmarkCircleRegular />
-            <span>Approvals</span>
-            {!!waiting.data?.waiting && <CounterBadge count={waiting.data.waiting} size="small" color="danger" />}
-          </NavLink>
-          <NavLink to="/recycle-bin" className={s.navLink} title="Recycle bin">
-            <DeleteRegular />
-            <span>Recycle bin</span>
-          </NavLink>
+          {!me.anonymous && (
+            <>
+              <NavLink to="/approvals" className={s.navLink} title="Approvals">
+                <CheckmarkCircleRegular />
+                <span>Approvals</span>
+                {!!waiting.data?.waiting && <CounterBadge count={waiting.data.waiting} size="small" color="danger" />}
+              </NavLink>
+              <NavLink to="/recycle-bin" className={s.navLink} title="Recycle bin">
+                <DeleteRegular />
+                <span>Recycle bin</span>
+              </NavLink>
+            </>
+          )}
           {me.admin && (
             <NavLink to="/admin" className={s.navLink} title="Central Administration">
               <ShieldKeyholeRegular />
@@ -124,6 +130,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )}
         </nav>
+        {me.anonymous ? (
+          <Button onClick={() => window.dispatchEvent(new Event("nexora:unauthorized"))}>Sign in</Button>
+        ) : (
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <button className={s.avatarBtn} aria-label="Account">
@@ -150,6 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </MenuList>
           </MenuPopover>
         </Menu>
+        )}
       </header>
       <main className={s.main}>{children}</main>
       <Toaster toasterId={TOASTER_ID} position="bottom-end" />

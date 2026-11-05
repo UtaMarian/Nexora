@@ -1,6 +1,9 @@
-import { MessageBar, MessageBarBody, MessageBarTitle, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { useContext } from "react";
+import { Button, MessageBar, MessageBarBody, MessageBarTitle, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { LockClosedRegular } from "@fluentui/react-icons";
 import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
+import { MeContext } from "./me";
 
 const useStyles = makeStyles({
   empty: {
@@ -30,6 +33,17 @@ export function ErrorBar({ error }: { error: unknown }) {
 
 export function NotFound({ error }: { error?: unknown }) {
   const s = useStyles();
+  const me = useContext(MeContext);
+  if (error instanceof ApiError && error.code === "site_not_shared") {
+    return (
+      <div className={s.empty}>
+        <LockClosedRegular style={{ fontSize: 40 }} aria-hidden />
+        <Text as="h1" weight="semibold" size={600}>This site wasn't shared with you</Text>
+        <Text>Ask the site's owner for access.{me ? ` You are signed in as ${me.displayName}.` : ""}</Text>
+        <Link to="/">Back to your sites</Link>
+      </div>
+    );
+  }
   const notFound = !error || (error instanceof ApiError && error.status === 404);
   if (!notFound) return <ErrorBar error={error} />;
   return (
@@ -41,6 +55,7 @@ export function NotFound({ error }: { error?: unknown }) {
         </MessageBarBody>
       </MessageBar>
       <Link to="/">Back to your sites</Link>
+      {me?.anonymous && <Button onClick={() => window.dispatchEvent(new Event("nexora:unauthorized"))}>Sign in</Button>}
     </div>
   );
 }

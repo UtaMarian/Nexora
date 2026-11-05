@@ -23,11 +23,12 @@ public final class Dtos {
 
     public record PrincipalRef(UUID id, Principal.Kind kind, String login, String displayName) {
         public static PrincipalRef of(Principal p) {
-            return p == null ? null : new PrincipalRef(p.getId(), p.getKind(), p.getLogin(), p.getDisplayName());
+            if (p == null) return null;
+            return new PrincipalRef(p.getId(), p.getKind(), io.nexora.identity.CurrentUser.anonymousRequest() ? null : p.getLogin(), p.getDisplayName());
         }
     }
 
-    public record Me(UUID id, String login, String displayName, String email, boolean admin, boolean searchEnabled) {}
+    public record Me(UUID id, String login, String displayName, String email, boolean admin, boolean searchEnabled, boolean anonymous) {}
 
     public record LoginRequest(@NotBlank String login, @NotBlank String password) {}
 
